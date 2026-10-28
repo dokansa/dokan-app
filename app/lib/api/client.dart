@@ -52,6 +52,9 @@ class ApiClient {
         options.headers['X-Dokan-App'] = '1';
         options.headers['X-Dokan-App-Platform'] = Platform.isIOS ? 'ios' : 'android';
         options.headers['Accept-Language'] = 'ar';
+        if (AppConfig.stagingCookie.isNotEmpty) {
+          options.headers['Cookie'] = 'dk_stg=${AppConfig.stagingCookie}';
+        }
         final t = client.authToken;
         if (t != null) {
           options.headers['Authorization'] = 'Bearer $t';

@@ -5,6 +5,9 @@ class AppConfig {
     defaultValue: 'https://dokansa.com',
   );
 
+  /// Test builds only: lets the app through the staging site's private-preview guard.
+  static const String stagingCookie = String.fromEnvironment('STAGING_COOKIE');
+
   static String get storeApi => '$storeUrl/wp-json/wc/store/v1';
   static String get appApi => '$storeUrl/wp-json/dokan-app/v1';
 
