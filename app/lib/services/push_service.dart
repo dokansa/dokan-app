@@ -6,6 +6,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../firebase_options.dart';
 import '../router.dart';
 import '../state/providers.dart';
 
@@ -16,7 +17,12 @@ class PushService {
 
   static Future<void> init(ProviderContainer container) async {
     try {
-      await Firebase.initializeApp();
+      if (!Platform.isAndroid) {
+        // iOS needs its own Firebase app registration (GoogleService-Info.plist) first.
+        await Firebase.initializeApp();
+      } else {
+        await Firebase.initializeApp(options: FirebaseConfig.android);
+      }
     } catch (e) {
       debugPrint('Push disabled (Firebase not configured): $e');
       return;

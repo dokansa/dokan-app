@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "917838520906",
+    "project_id": "dokansa-99b5b",
+    "storage_bucket": "dokansa-99b5b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:917838520906:android:37e425e664dba2a433fcb3",
+        "android_client_info": {
+          "package_name": "com.dokansa.shop"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBKmtVLfgBJotR2ffg5WH-gwVepuogSyr4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:917838520906:android:1f7914eddcd814f933fcb3",
+        "android_client_info": {
+          "package_name": "com.dokansa.shop.test"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBKmtVLfgBJotR2ffg5WH-gwVepuogSyr4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

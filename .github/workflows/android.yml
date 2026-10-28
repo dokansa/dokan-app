@@ -47,6 +47,9 @@ jobs:
           perl -pi -e 's#android:label="[^"]*"#android:label="دكان"#' "$MANIFEST"
           GRADLE=$(ls android/app/build.gradle* | head -1)
           perl -pi -e 's/minSdk(Version)?\s*=?\s*flutter\.minSdkVersion/minSdk = 23/' "$GRADLE"
+          # Test builds install next to the live Play app (com.dokansa.shop).
+          perl -pi -e 's/applicationId\s*=?\s*"[^"]+"/applicationId = "com.dokansa.shop.test"/' "$GRADLE"
+          grep -n "applicationId\|minSdk" "$GRADLE"
 
       - run: flutter pub get
 
@@ -68,7 +71,7 @@ jobs:
           set -o pipefail
           STG=""
           if [ -n "${{ secrets.STAGING_KEY }}" ]; then STG=$(printf '%s' "${{ secrets.STAGING_KEY }}" | sha256sum | cut -d' ' -f1); fi
-          flutter build apk --release --dart-define=STORE_URL=$STORE_URL --dart-define=STAGING_COOKIE=$STG 2>&1 | tee build.log || {
+          flutter build apk --release --dart-define=STORE_URL=$STORE_URL --dart-define=STAGING_COOKIE=$STG --dart-define=FIREBASE_APP_ID=1:917838520906:android:1f7914eddcd814f933fcb3 2>&1 | tee build.log || {
             grep -E "error|Error|FAILURE|What went wrong|Exception" build.log | head -40 | sed 's/^/::error title=build::/'
             exit 1
           }
