@@ -4,13 +4,17 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/lang.dart';
 import '../models/models.dart';
 import '../router.dart';
 import '../state/providers.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/permission_prompts.dart';
 
-String _date(DateTime? d) => d == null ? '' : intl.DateFormat('d MMM، h:mm a', 'ar').format(d.toLocal());
+String _date(DateTime? d) => d == null
+    ? ''
+    : intl.DateFormat(AppLang.isAr ? 'd MMM، h:mm a' : 'd MMM, h:mm a', AppLang.code).format(d.toLocal());
 
 class OrdersScreen extends ConsumerWidget {
   const OrdersScreen({super.key});
@@ -20,18 +24,18 @@ class OrdersScreen extends ConsumerWidget {
     final user = ref.watch(sessionProvider);
     final orders = ref.watch(ordersProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('طلباتي')),
+      appBar: AppBar(title: Text(context.tr('طلباتي', 'My orders'))),
       body: user == null
           ? Center(
               child: Padding(
                 padding: const EdgeInsets.all(32),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Text('سجّل دخولك عشان تشوف طلباتك', style: TextStyle(color: C.muted)),
+                  Text(context.tr('سجّل دخولك عشان تشوف طلباتك', 'Log in to see your orders'), style: const TextStyle(color: C.muted)),
                   const SizedBox(height: 16),
                   FilledButton(
                     style: FilledButton.styleFrom(minimumSize: const Size(200, 52)),
                     onPressed: () => context.push('/login'),
-                    child: const Text('تسجيل الدخول'),
+                    child: Text(context.tr('تسجيل الدخول', 'Log in')),
                   ),
                 ]),
               ),
@@ -43,9 +47,12 @@ class OrdersScreen extends ConsumerWidget {
                 loading: () => const LoadingBox(),
                 error: (e, _) => ListView(children: [ErrorBox(e, onRetry: () => ref.invalidate(ordersProvider))]),
                 data: (list) => list.isEmpty
-                    ? ListView(children: const [
-                        SizedBox(height: 120),
-                        Center(child: Text('ما عندك طلبات للحين', style: TextStyle(color: C.muted))),
+                    ? ListView(children: [
+                        const SizedBox(height: 120),
+                        Center(
+                          child: Text(context.tr('ما عندك طلبات للحين', 'No orders yet'),
+                              style: const TextStyle(color: C.muted)),
+                        ),
                       ])
                     : ListView.separated(
                         padding: const EdgeInsets.fromLTRB(20, 4, 20, kTabBarClearance),
@@ -82,15 +89,15 @@ class _OrderRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('طلب #${order.number}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                    Text('${_date(order.date)} · ${order.itemCount} منتج', style: const TextStyle(fontSize: 12, color: C.muted)),
+                    Text(context.tr('طلب #${order.number}', 'Order #${order.number}'), style: const TextStyle(fontWeight: FontWeight.w700)),
+                    Text('${_date(order.date)} · ${context.tr('${order.itemCount} منتج', '${order.itemCount} items')}', style: const TextStyle(fontSize: 12, color: C.muted)),
                     const SizedBox(height: 4),
                     Text(order.statusLabel,
                         style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: active ? C.accentText : C.primary)),
                   ],
                 ),
               ),
-              Text('${order.total} ر.س', style: display(14, weight: FontWeight.w700)),
+              Text('${order.total} ${currencyLabel(context.isAr)}', style: display(14, weight: FontWeight.w700)),
             ],
           ),
         ),
@@ -111,14 +118,31 @@ class OrderScreen extends ConsumerStatefulWidget {
 class _OrderScreenState extends ConsumerState<OrderScreen> {
   bool _busy = false;
 
-  static const _stages = [
-    ('تم استلام الطلب', 'وصلنا طلبك وجهزنا الفاتورة'),
-    ('قيد التنفيذ', 'نجهّز طلبك في المستودع'),
-    ('تم الشحن', 'طلع مع شركة الشحن ومعه رقم تتبع'),
-    ('في الطريق إليك', 'المندوب بيتواصل معك'),
-    ('تم التوصيل', 'بالعافية على حيوانك'),
-  ];
-  static const _heads = ['استلمنا طلبك', 'نجهّز طلبك', 'طلبك انشحن', 'طلبك في الطريق', 'وصل طلبك'];
+  @override
+  void initState() {
+    super.initState();
+    if (widget.justPlaced) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) askNotifications(context);
+      });
+    }
+  }
+
+  List<(String, String)> _stages(BuildContext context) => [
+        (context.tr('تم استلام الطلب', 'Order received'), context.tr('وصلنا طلبك وجهزنا الفاتورة', 'We got your order and made the invoice')),
+        (context.tr('قيد التنفيذ', 'Processing'), context.tr('نجهّز طلبك في المستودع', 'Packing your order at the warehouse')),
+        (context.tr('تم الشحن', 'Shipped'), context.tr('طلع مع شركة الشحن ومعه رقم تتبع', 'With the courier, tracking number included')),
+        (context.tr('في الطريق إليك', 'On its way'), context.tr('المندوب بيتواصل معك', 'The driver will contact you')),
+        (context.tr('تم التوصيل', 'Delivered'), context.tr('بالعافية على حيوانك', 'Hope your pet enjoys it')),
+      ];
+
+  List<String> _heads(BuildContext context) => [
+        context.tr('استلمنا طلبك', 'We got your order'),
+        context.tr('نجهّز طلبك', 'Packing your order'),
+        context.tr('طلبك انشحن', 'Your order has shipped'),
+        context.tr('طلبك في الطريق', 'Your order is on its way'),
+        context.tr('وصل طلبك', 'Your order arrived'),
+      ];
 
   Future<void> _reorder(OrderDetail o) async {
     setState(() => _busy = true);
@@ -145,15 +169,15 @@ class _OrderScreenState extends ConsumerState<OrderScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('طلب إلغاء'),
+        title: Text(ctx.tr('طلب إلغاء', 'Cancellation request')),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('بنوقف تجهيز الطلب ونراجع طلب الإلغاء.'),
+          Text(ctx.tr('بنوقف تجهيز الطلب ونراجع طلب الإلغاء.', "We'll pause packing your order and review the request.")),
           const SizedBox(height: 12),
-          TextField(controller: reason, decoration: const InputDecoration(hintText: 'السبب (اختياري)')),
+          TextField(controller: reason, decoration: InputDecoration(hintText: ctx.tr('السبب (اختياري)', 'Reason (optional)'))),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('رجوع')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('أرسل الطلب')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(ctx.tr('رجوع', 'Back'))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(ctx.tr('أرسل الطلب', 'Send request'))),
         ],
       ),
     );
@@ -163,7 +187,7 @@ class _OrderScreenState extends ConsumerState<OrderScreen> {
       await ref.read(appApiProvider).cancelRequest(o.summary.id, reason.text.trim());
       ref.invalidate(orderProvider(widget.id));
       ref.invalidate(ordersProvider);
-      if (mounted) showMessage(context, 'وصلنا طلب الإلغاء، بنرد عليك قريب');
+      if (mounted) showMessage(context, context.tr('وصلنا طلب الإلغاء، بنرد عليك قريب', "We got your cancellation request. We'll get back to you soon"));
     } catch (e) {
       if (mounted) showMessage(context, e, error: true);
     } finally {
@@ -177,12 +201,15 @@ class _OrderScreenState extends ConsumerState<OrderScreen> {
     final order = ref.watch(orderProvider(widget.id));
     return Scaffold(
       appBar: AppBar(
-        title: Text('طلب #${order.valueOrNull?.summary.number ?? widget.id}'),
+        title: Text(context.tr(
+          'طلب #${order.valueOrNull?.summary.number ?? widget.id}',
+          'Order #${order.valueOrNull?.summary.number ?? widget.id}',
+        )),
         leading: Padding(
           padding: const EdgeInsets.all(5),
           child: RoundIconButton(
             icon: Icons.arrow_back_rounded,
-            label: 'رجوع',
+            label: context.tr('رجوع', 'Back'),
             onTap: () => context.canPop() ? context.pop() : context.go('/orders'),
           ),
         ),
@@ -196,20 +223,26 @@ class _OrderScreenState extends ConsumerState<OrderScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
             children: [
+              const NotifyPromptCard(),
               if (widget.justPlaced)
                 Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(color: C.mint, borderRadius: BorderRadius.circular(18)),
-                  child: const Row(children: [
-                    Icon(Icons.check_circle_rounded, color: C.success),
-                    SizedBox(width: 10),
-                    Expanded(child: Text('تم الطلب، شكراً لك! بنرسل لك إشعار مع كل تحديث.', style: TextStyle(fontWeight: FontWeight.w700))),
+                  child: Row(children: [
+                    const Icon(Icons.check_circle_rounded, color: C.success),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        context.tr('تم الطلب، شكراً لك! بنرسل لك إشعار مع كل تحديث.', "Order placed, thank you! We'll notify you at every step."),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
                   ]),
                 ),
-              _StatusCard(order: o, heads: _heads),
+              _StatusCard(order: o, heads: _heads(context)),
               const SizedBox(height: 16),
-              if (o.stage > 0) _Timeline(order: o, stages: _stages),
+              if (o.stage > 0) _Timeline(order: o, stages: _stages(context)),
               const SizedBox(height: 16),
               Row(children: [
                 if (o.tracking?.url != null && o.tracking!.url!.isNotEmpty) ...[
@@ -217,7 +250,7 @@ class _OrderScreenState extends ConsumerState<OrderScreen> {
                     child: FilledButton.icon(
                       onPressed: () => launchUrl(Uri.parse(o.tracking!.url!), mode: LaunchMode.externalApplication),
                       icon: const Icon(Icons.local_shipping_outlined, size: 18),
-                      label: const Text('تتبع الشحنة', style: TextStyle(fontSize: 14)),
+                      label: Text(context.tr('تتبع الشحنة', 'Track shipment'), style: const TextStyle(fontSize: 14)),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -227,18 +260,20 @@ class _OrderScreenState extends ConsumerState<OrderScreen> {
                     style: FilledButton.styleFrom(backgroundColor: C.surface, foregroundColor: C.ink),
                     onPressed: () => context.push('/support?order=${o.summary.id}'),
                     icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
-                    label: const Text('عندي مشكلة', style: TextStyle(fontSize: 14)),
+                    label: Text(context.tr('عندي مشكلة', 'I have a problem'), style: const TextStyle(fontSize: 14)),
                   ),
                 ),
               ]),
               const SizedBox(height: 10),
               Text(
-                o.canCancel ? 'تقدر تطلب إلغاء الطلب ما دام قيد التنفيذ.' : 'بعد الشحن ما يمكن إلغاء الطلب — لو فيه مشكلة كلمنا.',
+                o.canCancel
+                    ? context.tr('تقدر تطلب إلغاء الطلب ما دام قيد التنفيذ.', 'You can request a cancellation while the order is processing.')
+                    : context.tr('بعد الشحن ما يمكن إلغاء الطلب — لو فيه مشكلة كلمنا.', "Orders can't be cancelled once shipped — if something's wrong, talk to us."),
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 12, color: C.muted),
               ),
               const SizedBox(height: 20),
-              Text('المنتجات', style: display(16)),
+              Text(context.tr('المنتجات', 'Items'), style: display(16)),
               const SizedBox(height: 8),
               for (final l in o.items)
                 Padding(
@@ -247,26 +282,26 @@ class _OrderScreenState extends ConsumerState<OrderScreen> {
                     SizedBox(width: 52, height: 52, child: NetImage(l.image)),
                     const SizedBox(width: 10),
                     Expanded(child: Text('${l.name} × ${l.quantity}', style: const TextStyle(fontSize: 13))),
-                    Text('${l.total} ر.س', style: const TextStyle(fontWeight: FontWeight.w700)),
+                    Text('${l.total} ${currencyLabel(context.isAr)}', style: const TextStyle(fontWeight: FontWeight.w700)),
                   ]),
                 ),
               const Divider(color: C.line),
-              _line('الشحن', '${o.shippingTotal} ر.س'),
-              for (final (name, total) in o.fees) _line(name, '$total ر.س'),
-              _line('طريقة الدفع', o.paymentTitle),
-              _line('الإجمالي', '${o.summary.total} ر.س', bold: true),
+              _line(context.tr('الشحن', 'Shipping'), '${o.shippingTotal} ${currencyLabel(context.isAr)}'),
+              for (final (name, total) in o.fees) _line(name, '$total ${currencyLabel(context.isAr)}'),
+              _line(context.tr('طريقة الدفع', 'Payment method'), o.paymentTitle),
+              _line(context.tr('الإجمالي', 'Total'), '${o.summary.total} ${currencyLabel(context.isAr)}', bold: true),
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: _busy ? null : () => _reorder(o),
                 icon: const Icon(Icons.autorenew_rounded),
-                label: const Text('اطلبه مرة ثانية'),
+                label: Text(context.tr('اطلبه مرة ثانية', 'Order again')),
               ),
               if (o.canCancel) ...[
                 const SizedBox(height: 8),
                 TextButton(
                   onPressed: _busy ? null : () => _cancel(o),
                   style: TextButton.styleFrom(foregroundColor: C.accentText, minimumSize: const Size.fromHeight(48)),
-                  child: const Text('طلب إلغاء الطلب'),
+                  child: Text(context.tr('طلب إلغاء الطلب', 'Request cancellation')),
                 ),
               ],
             ],
@@ -301,12 +336,12 @@ class _StatusCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('الحالة الآن', style: TextStyle(fontSize: 13, color: Color(0xFFC9D3D0))),
+          Text(context.tr('الحالة الآن', 'Current status'), style: const TextStyle(fontSize: 13, color: Color(0xFFC9D3D0))),
           const SizedBox(height: 6),
           Text(head, style: display(26, weight: FontWeight.w700, color: Colors.white)),
           if (order.tracking?.number != null && order.tracking!.number!.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text('${order.tracking!.carrier ?? 'رقم التتبع'}: ${order.tracking!.number}',
+            Text('${order.tracking!.carrier ?? context.tr('رقم التتبع', 'Tracking number')}: ${order.tracking!.number}',
                 style: const TextStyle(fontSize: 13, color: Color(0xFFFFC8A1))),
           ],
           const SizedBox(height: 14),

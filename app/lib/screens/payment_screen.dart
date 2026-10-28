@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../config.dart';
+import '../l10n/lang.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 
@@ -83,11 +84,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final leave = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('تلغي الدفع؟'),
-        content: const Text('طلبك محفوظ، وتقدر تكمل الدفع بعدين من طلباتي.'),
+        title: Text(ctx.tr('تلغي الدفع؟', 'Cancel payment?')),
+        content: Text(ctx.tr(
+          'طلبك محفوظ، وتقدر تكمل الدفع بعدين من طلباتي.',
+          'Your order is saved. You can finish paying later from My orders.',
+        )),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('أكمل الدفع')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('اطلع')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(ctx.tr('أكمل الدفع', 'Continue paying'))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(ctx.tr('اطلع', 'Leave'))),
         ],
       ),
     );
@@ -103,10 +107,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text('الدفع · طلب #${widget.args.orderId}'),
+          title: Text(context.tr('الدفع · طلب #${widget.args.orderId}', 'Payment · Order #${widget.args.orderId}')),
           leading: Padding(
             padding: const EdgeInsets.all(5),
-            child: RoundIconButton(icon: Icons.close_rounded, label: 'إغلاق', onTap: _confirmClose),
+            child: RoundIconButton(icon: Icons.close_rounded, label: context.tr('إغلاق', 'Close'), onTap: _confirmClose),
           ),
           bottom: _progress < 100
               ? PreferredSize(
@@ -121,11 +125,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
               width: double.infinity,
               color: C.mint,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.lock_outline_rounded, size: 16, color: C.primary),
-                  SizedBox(width: 6),
-                  Expanded(child: Text('صفحة دفع آمنة من مزوّد الدفع', style: TextStyle(fontSize: 12, color: C.primaryDeep))),
+                  const Icon(Icons.lock_outline_rounded, size: 16, color: C.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      context.tr('صفحة دفع آمنة من مزوّد الدفع', "Secure payment page from the payment provider"),
+                      style: const TextStyle(fontSize: 12, color: C.primaryDeep),
+                    ),
+                  ),
                 ],
               ),
             ),

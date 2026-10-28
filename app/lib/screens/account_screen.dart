@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
-import '../config.dart';
+import '../l10n/lang.dart';
 import '../models/models.dart';
 import '../router.dart';
 import '../services/push_service.dart';
 import '../state/providers.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/permission_prompts.dart';
 
 class AccountScreen extends ConsumerWidget {
   const AccountScreen({super.key});
@@ -21,22 +21,22 @@ class AccountScreen extends ConsumerWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('بياناتي'),
+        title: Text(ctx.tr('بياناتي', 'My details')),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: first, decoration: const InputDecoration(labelText: 'الاسم')),
+          TextField(controller: first, decoration: InputDecoration(labelText: ctx.tr('الاسم', 'First name'))),
           const SizedBox(height: 8),
-          TextField(controller: last, decoration: const InputDecoration(labelText: 'اسم العائلة')),
+          TextField(controller: last, decoration: InputDecoration(labelText: ctx.tr('اسم العائلة', 'Last name'))),
           const SizedBox(height: 8),
           TextField(
             controller: email,
             keyboardType: TextInputType.emailAddress,
             textDirection: TextDirection.ltr,
-            decoration: const InputDecoration(labelText: 'الإيميل (اختياري)'),
+            decoration: InputDecoration(labelText: ctx.tr('الإيميل (اختياري)', 'Email (optional)')),
           ),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('احفظ')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(ctx.tr('إلغاء', 'Cancel'))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(ctx.tr('احفظ', 'Save'))),
         ],
       ),
     );
@@ -63,14 +63,17 @@ class AccountScreen extends ConsumerWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('حذف الحساب'),
-        content: const Text('بنحذف حسابك وبياناتك بعد مراجعة الطلب. الطلبات القديمة تبقى في سجلات المتجر حسب الأنظمة.'),
+        title: Text(ctx.tr('حذف الحساب', 'Delete account')),
+        content: Text(ctx.tr(
+          'بنحذف حسابك وبياناتك بعد مراجعة الطلب. الطلبات القديمة تبقى في سجلات المتجر حسب الأنظمة.',
+          'We will delete your account and data after reviewing the request. Past orders stay in the store records as required by law.',
+        )),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('رجوع')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(ctx.tr('رجوع', 'Back'))),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: C.accentText),
-            child: const Text('احذف حسابي'),
+            child: Text(ctx.tr('احذف حسابي', 'Delete my account')),
           ),
         ],
       ),
@@ -79,7 +82,7 @@ class AccountScreen extends ConsumerWidget {
     try {
       await PushService.unregister(ProviderScope.containerOf(context, listen: false));
       await ref.read(sessionProvider.notifier).deleteAccount();
-      if (context.mounted) showMessage(context, 'وصلنا طلب حذف الحساب');
+      if (context.mounted) showMessage(context, context.tr('وصلنا طلب حذف الحساب', 'Account deletion requested'));
     } catch (e) {
       if (context.mounted) showMessage(context, e, error: true);
     }
@@ -89,9 +92,10 @@ class AccountScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(sessionProvider);
     final pets = ref.watch(petsProvider).valueOrNull ?? const <Pet>[];
+    final lang = ref.watch(langProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('حسابي')),
+      appBar: AppBar(title: Text(context.tr('حسابي', 'Account'))),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, kTabBarClearance),
         children: [
@@ -100,15 +104,18 @@ class AccountScreen extends ConsumerWidget {
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(color: C.primary, borderRadius: BorderRadius.circular(24)),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('سجّل دخولك', style: display(20, color: Colors.white)),
+                Text(context.tr('سجّل دخولك', 'Sign in'), style: display(20, color: Colors.white)),
                 const SizedBox(height: 4),
-                const Text('تابع طلباتك وأضف حيواناتك ووصلك تذكير قبل ما يخلص الأكل',
-                    style: TextStyle(color: Color(0xFFCFE3DD))),
+                Text(
+                  context.tr('تابع طلباتك وأضف حيواناتك ووصلك تذكير قبل ما يخلص الأكل',
+                      'Track your orders, add your pets and get reminded before food runs out'),
+                  style: const TextStyle(color: Color(0xFFCFE3DD)),
+                ),
                 const SizedBox(height: 14),
                 FilledButton(
                   style: FilledButton.styleFrom(backgroundColor: C.accent, foregroundColor: C.ink),
                   onPressed: () => context.push('/login'),
-                  child: const Text('دخول برقم الجوال'),
+                  child: Text(context.tr('دخول برقم الجوال', 'Sign in with mobile number')),
                 ),
               ]),
             )
@@ -123,14 +130,16 @@ class AccountScreen extends ConsumerWidget {
                   backgroundColor: C.peach,
                   child: Text(user.name.isEmpty ? 'د' : user.name.characters.first, style: display(18, weight: FontWeight.w700)),
                 ),
-                title: Text(user.name.isEmpty ? 'عميل دكان' : user.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                subtitle: Text(user.phone, textDirection: TextDirection.ltr, textAlign: TextAlign.right),
+                title: Text(user.name.isEmpty ? context.tr('عميل دكان', 'Dokan customer') : user.name,
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text(user.phone,
+                    textDirection: TextDirection.ltr, textAlign: context.isAr ? TextAlign.right : TextAlign.left),
                 trailing: const Icon(Icons.edit_outlined),
                 onTap: () => _editName(context, ref, user),
               ),
             ),
             const SizedBox(height: 18),
-            const SectionHeader('حيواناتي'),
+            SectionHeader(context.tr('حيواناتي', 'My pets')),
             const SizedBox(height: 4),
             for (final p in pets)
               Padding(
@@ -147,18 +156,73 @@ class AccountScreen extends ConsumerWidget {
                   ),
                 ),
               ),
-            _Tile(icon: Icons.add_rounded, title: 'أضف حيوان', onTap: () => context.push('/pet-edit')),
+            _Tile(icon: Icons.add_rounded, title: context.tr('أضف حيوان', 'Add a pet'), onTap: () => context.push('/pet-edit')),
           ],
           const SizedBox(height: 18),
-          _Tile(icon: Icons.support_agent_rounded, title: 'خدمة العملاء', onTap: () => context.push('/support')),
+          // Language
+          Material(
+            color: C.surface,
+            borderRadius: BorderRadius.circular(R.card),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
+              child: Row(
+                children: [
+                  const Icon(Icons.translate_rounded, color: C.primary),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(context.tr('اللغة', 'Language'), style: const TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'ar', label: Text('العربية')),
+                      ButtonSegment(value: 'en', label: Text('English')),
+                    ],
+                    selected: {lang},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (s) => ref.read(langProvider.notifier).set(s.first),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (user != null)
+            _Tile(
+              icon: Icons.notifications_active_outlined,
+              title: context.tr('إشعارات الطلبات', 'Order notifications'),
+              onTap: () async {
+                final allowed = await PushService.isAllowed();
+                if (!context.mounted) return;
+                if (allowed == true) {
+                  showMessage(context, context.tr('الإشعارات مفعّلة ✓', 'Notifications are on ✓'));
+                } else {
+                  await askNotifications(context, force: true);
+                }
+              },
+            ),
+          _Tile(
+            icon: Icons.auto_awesome_rounded,
+            title: context.tr('مساعد دكان', 'Dokan assistant'),
+            onTap: () => context.push('/assistant'),
+          ),
+          _Tile(
+            icon: Icons.support_agent_rounded,
+            title: context.tr('خدمة العملاء', 'Customer care'),
+            onTap: () => context.push('/support'),
+          ),
           _Tile(
             icon: Icons.policy_outlined,
-            title: 'سياسة الخصوصية',
-            onTap: () => launchUrl(Uri.parse('${AppConfig.storeUrl}/privacy-policy/')),
+            title: context.tr('السياسات والشروط', 'Policies & terms'),
+            onTap: () => context.push('/policies'),
           ),
           if (user != null) ...[
-            _Tile(icon: Icons.logout_rounded, title: 'تسجيل الخروج', onTap: () => _logout(context, ref)),
-            _Tile(icon: Icons.person_remove_outlined, title: 'حذف الحساب', danger: true, onTap: () => _delete(context, ref)),
+            _Tile(icon: Icons.logout_rounded, title: context.tr('تسجيل الخروج', 'Sign out'), onTap: () => _logout(context, ref)),
+            _Tile(
+              icon: Icons.person_remove_outlined,
+              title: context.tr('حذف الحساب', 'Delete account'),
+              danger: true,
+              onTap: () => _delete(context, ref),
+            ),
           ],
         ],
       ),

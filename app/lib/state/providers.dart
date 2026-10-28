@@ -3,12 +3,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/app_api.dart';
 import '../api/client.dart';
 import '../api/store_api.dart';
+import '../l10n/lang.dart';
 import '../models/models.dart';
+import '../services/local_store.dart';
 
 /// Overridden in main() with the ready client.
 final apiClientProvider = Provider<ApiClient>((ref) => throw UnimplementedError());
-final storeApiProvider = Provider((ref) => StoreApi(ref.watch(apiClientProvider)));
-final appApiProvider = Provider((ref) => AppApi(ref.watch(apiClientProvider)));
+// Both APIs watch the language, so everything fetched through them reloads when it changes.
+final storeApiProvider = Provider((ref) {
+  ref.watch(langProvider);
+  return StoreApi(ref.watch(apiClientProvider));
+});
+final appApiProvider = Provider((ref) {
+  ref.watch(langProvider);
+  return AppApi(ref.watch(apiClientProvider));
+});
 
 final configProvider = FutureProvider<StoreConfig>((ref) => ref.watch(appApiProvider).config());
 
@@ -35,15 +44,19 @@ class SessionNotifier extends Notifier<AppUser?> {
     }
   }
 
-  Future<void> requestOtp(String phone) => _api.requestOtp(phone);
+  /// Returns the channel used ("whatsapp" / "sms").
+  Future<String> requestOtp(String phone, {String? channel}) => _api.requestOtp(phone, channel: channel);
 
-  Future<void> verifyOtp(String phone, String code, {String? name}) async {
-    final (token, user) = await _api.verifyOtp(phone, code, name: name);
+  /// Returns how many earlier orders (placed with this phone) were linked to the account.
+  Future<int> verifyOtp(String phone, String code, {String? name}) async {
+    final (token, user, linked) = await _api.verifyOtp(phone, code, name: name);
     await _client.setAuthToken(token);
     state = user;
     ref.invalidate(petsProvider);
     ref.invalidate(ordersProvider);
+    ref.invalidate(purchasedProductsProvider);
     await ref.read(cartProvider.notifier).refresh();
+    return linked;
   }
 
   Future<void> updateProfile(Map<String, dynamic> fields) async {
@@ -76,7 +89,10 @@ class CartNotifier extends AsyncNotifier<Cart> {
   StoreApi get _api => ref.read(storeApiProvider);
 
   @override
-  Future<Cart> build() => _api.cart();
+  Future<Cart> build() {
+    ref.watch(langProvider);
+    return _api.cart();
+  }
 
   Future<void> refresh() async {
     state = AsyncData(await _api.cart());
@@ -227,3 +243,88 @@ final ordersProvider = FutureProvider<List<OrderSummary>>((ref) async {
 });
 
 final orderProvider = FutureProvider.family<OrderDetail, int>((ref, id) => ref.watch(appApiProvider).order(id));
+
+
+// ---------------------------------------------------------------- home sections & search
+
+/// Products for a list of ids, in the same order. Key is "12,7,40".
+final productsByIdsProvider = FutureProvider.family<List<Product>, String>((ref, key) async {
+  final ids = [for (final s in key.split(',')) int.tryParse(s) ?? 0].where((i) => i > 0).toList();
+  if (ids.isEmpty) return const [];
+  final (list, _) = await ref.watch(storeApiProvider).products(include: ids, perPage: ids.length.clamp(1, 60));
+  final byId = {for (final p in list) p.id: p};
+  return [for (final id in ids) if (byId[id] != null) byId[id]!];
+});
+
+String idsKey(Iterable<int> ids) => ids.join(',');
+
+int? _petCategory(Ref ref) {
+  final pet = ref.watch(selectedPetProvider);
+  if (pet == null) return null;
+  final cats = ref.watch(configProvider).valueOrNull?.petCategories ?? const {};
+  final id = cats[pet.kind];
+  return id == null || id == 0 ? null : id;
+}
+
+/// Best sellers — for the selected pet's kind when we know its category.
+final bestSellersProvider = FutureProvider<List<Product>>((ref) async {
+  final (list, _) = await ref.watch(storeApiProvider).products(
+        category: _petCategory(ref),
+        orderBy: 'popularity',
+        perPage: 12,
+      );
+  return list;
+});
+
+final newArrivalsProvider = FutureProvider<List<Product>>((ref) async {
+  final (list, _) = await ref.watch(storeApiProvider).products(
+        category: _petCategory(ref),
+        orderBy: 'date',
+        perPage: 12,
+      );
+  return list;
+});
+
+final offersProvider = FutureProvider<List<Product>>((ref) async {
+  final (list, _) = await ref.watch(storeApiProvider).products(onSale: true, orderBy: 'popularity', perPage: 12);
+  return list;
+});
+
+final recentlyViewedProductsProvider = FutureProvider<List<Product>>((ref) async {
+  final ids = ref.watch(recentlyViewedProvider);
+  if (ids.isEmpty) return const [];
+  return ref.watch(productsByIdsProvider(idsKey(ids.take(12))).future);
+});
+
+/// What the customer bought before ("اشتريته قبل").
+final purchasedProductsProvider = FutureProvider<List<Product>>((ref) async {
+  ref.watch(sessionProvider);
+  if (ref.read(apiClientProvider).authToken == null) return const [];
+  try {
+    final ids = await ref.watch(appApiProvider).purchased();
+    if (ids.isEmpty) return const [];
+    return ref.watch(productsByIdsProvider(idsKey(ids.take(12))).future);
+  } catch (_) {
+    return const [];
+  }
+});
+
+class SearchArgs {
+  const SearchArgs(this.q, {this.ai = false, this.log = false});
+  final String q;
+  final bool ai;
+  final bool log;
+
+  @override
+  bool operator ==(Object other) => other is SearchArgs && other.q == q && other.ai == ai && other.log == log;
+
+  @override
+  int get hashCode => Object.hash(q, ai, log);
+}
+
+final searchProvider = FutureProvider.autoDispose.family<SearchResult, SearchArgs>((ref, a) {
+  final pet = ref.watch(selectedPetProvider);
+  return ref.watch(appApiProvider).search(a.q, petId: pet?.id, ai: a.ai, log: a.log);
+});
+
+final pageProvider = FutureProvider.family<PageContent, int>((ref, id) => ref.watch(appApiProvider).page(id));

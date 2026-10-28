@@ -22,7 +22,6 @@ class StoreApi {
       'page': page,
       'per_page': perPage,
       'stock_status': 'instock',
-      'lang': AppConfig.language,
       if (category != null) 'category': category,
       if (search != null && search.isNotEmpty) 'search': search,
       if (orderBy != null) 'orderby': orderBy,
@@ -35,10 +34,10 @@ class StoreApi {
   }
 
   Future<Product> product(int id) async =>
-      Product.fromJson(Map<String, dynamic>.from(await _c.get('$_b/products/$id', query: {'lang': AppConfig.language}) as Map));
+      Product.fromJson(Map<String, dynamic>.from(await _c.get('$_b/products/$id') as Map));
 
   Future<List<Category>> subcategories(int parent) async {
-    final data = await _c.get('$_b/products/categories', query: {'parent': parent, 'per_page': 50, 'lang': AppConfig.language});
+    final data = await _c.get('$_b/products/categories', query: {'parent': parent, 'per_page': 50});
     return [for (final c in (data as List)) Category.fromJson(Map<String, dynamic>.from(c as Map))]
         .where((c) => c.count > 0)
         .toList();
@@ -76,6 +75,9 @@ class StoreApi {
     required String paymentMethod,
     String note = '',
     String? petId,
+    double? lat,
+    double? lng,
+    double? accuracy,
   }) async {
     final d = await _c.post('$_b/checkout', body: {
       'billing_address': billing,
@@ -83,7 +85,12 @@ class StoreApi {
       'payment_method': paymentMethod,
       'customer_note': note,
       'extensions': {
-        'dokan-app': {if (petId != null) 'pet_id': petId},
+        'dokan-app': {
+          if (petId != null) 'pet_id': petId,
+          if (lat != null && lng != null) 'lat': lat,
+          if (lat != null && lng != null) 'lng': lng,
+          if (accuracy != null) 'accuracy': accuracy,
+        },
       },
     }) as Map;
     final pr = (d['payment_result'] as Map?) ?? const {};

@@ -30,13 +30,14 @@ class PushService {
     _ready = true;
     final fm = FirebaseMessaging.instance;
 
-    // Register whenever the customer is logged in.
+    // Register whenever the customer is logged in AND has already allowed notifications.
+    // Asking for permission happens through our own explanation first (askNotifications).
     container.listen(sessionProvider, (prev, user) {
-      if (user != null) unawaited(_register(container));
+      if (user != null) unawaited(_register(container, ask: false));
     }, fireImmediately: true);
     fm.onTokenRefresh.listen((t) {
       _token = t;
-      if (container.read(sessionProvider) != null) unawaited(_register(container));
+      if (container.read(sessionProvider) != null) unawaited(_register(container, ask: false));
     });
 
     FirebaseMessaging.onMessageOpenedApp.listen((m) => _open(container, m.data));
@@ -50,13 +51,50 @@ class PushService {
     });
   }
 
-  /// Ask permission (iOS shows the system prompt) and send the token to the store.
-  static Future<void> _register(ProviderContainer container) async {
+  static bool get available => _ready;
+
+  /// Whether the customer has allowed notifications (null = can't tell / push not set up).
+  static Future<bool?> isAllowed() async {
+    if (!_ready) return null;
+    try {
+      final s = await FirebaseMessaging.instance.getNotificationSettings();
+      return s.authorizationStatus == AuthorizationStatus.authorized ||
+          s.authorizationStatus == AuthorizationStatus.provisional;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// True when the system dialog can still be shown (not decided yet).
+  static Future<bool> canAsk() async {
+    if (!_ready) return false;
+    try {
+      final s = await FirebaseMessaging.instance.getNotificationSettings();
+      return s.authorizationStatus == AuthorizationStatus.notDetermined;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Shows the system permission dialog, then registers the device. Returns true if allowed.
+  static Future<bool> requestAndRegister(ProviderContainer container) async {
+    if (!_ready) return false;
+    await _register(container, ask: true);
+    return await isAllowed() ?? false;
+  }
+
+  /// Sends the token to the store. With [ask] the system permission dialog is shown first.
+  static Future<void> _register(ProviderContainer container, {required bool ask}) async {
     if (!_ready) return;
     try {
       final fm = FirebaseMessaging.instance;
-      final settings = await fm.requestPermission(alert: true, badge: true, sound: true);
-      if (settings.authorizationStatus == AuthorizationStatus.denied) return;
+      final settings = ask
+          ? await fm.requestPermission(alert: true, badge: true, sound: true)
+          : await fm.getNotificationSettings();
+      if (settings.authorizationStatus != AuthorizationStatus.authorized &&
+          settings.authorizationStatus != AuthorizationStatus.provisional) {
+        return;
+      }
       if (Platform.isIOS) await fm.getAPNSToken();
       _token ??= await fm.getToken();
       if (_token == null) return;

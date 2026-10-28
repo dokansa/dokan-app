@@ -3,19 +3,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../l10n/lang.dart';
 import '../models/models.dart';
 import '../router.dart';
+import '../services/local_store.dart';
 import '../state/providers.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/product_rail.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
-  String _greeting() {
+  String _greeting(BuildContext context) {
     final h = DateTime.now().hour;
-    if (h < 12) return 'صباح الخير';
-    return 'مساء الخير';
+    if (h < 12) return context.tr('صباح الخير', 'Good morning');
+    return context.tr('مساء الخير', 'Good evening');
   }
 
   @override
@@ -24,6 +27,9 @@ class HomeScreen extends ConsumerWidget {
     final pets = ref.watch(petsProvider).valueOrNull ?? const <Pet>[];
     final pet = ref.watch(selectedPetProvider);
     final user = ref.watch(sessionProvider);
+    final petCat = pet == null ? null : config.valueOrNull?.petCategories[pet.kind];
+    final forKind = pet == null || petCat == null ? '' : ' ${petKindPlural(pet.kind, context.isAr)}';
+    final popular = config.valueOrNull?.popularSearches ?? const <String>[];
 
     return Scaffold(
       body: RefreshIndicator(
@@ -32,6 +38,11 @@ class HomeScreen extends ConsumerWidget {
           ref.invalidate(configProvider);
           ref.invalidate(petsProvider);
           ref.invalidate(forPetProvider);
+          ref.invalidate(bestSellersProvider);
+          ref.invalidate(newArrivalsProvider);
+          ref.invalidate(offersProvider);
+          ref.invalidate(purchasedProductsProvider);
+          ref.invalidate(recentlyViewedProductsProvider);
           await ref.read(cartProvider.notifier).refresh();
         },
         child: ListView(
@@ -46,32 +57,35 @@ class HomeScreen extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          user != null && user.firstName.isNotEmpty ? '${_greeting()} يا ${user.firstName}' : _greeting(),
+                          user != null && user.firstName.isNotEmpty
+                              ? '${_greeting(context)} ${context.tr('يا', '')} ${user.firstName}'.replaceAll('  ', ' ')
+                              : _greeting(context),
                           style: const TextStyle(fontSize: 14, color: C.muted),
                         ),
-                        Text('دكان', style: display(26, weight: FontWeight.w700)),
+                        Text(context.tr('دكان', 'Dokan'), style: display(26, weight: FontWeight.w700)),
                       ],
                     ),
                   ),
                   RoundIconButton(
                     icon: Icons.support_agent_rounded,
-                    label: 'خدمة العملاء',
+                    label: context.tr('خدمة العملاء', 'Customer care'),
                     onTap: () => context.push('/support'),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _SearchField(),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: _SearchBar(),
             ),
             const SizedBox(height: 16),
             _PetSwitcher(pets: pets, selected: pet),
             if (pet != null) _ReorderCard(pet: pet),
             if (pet == null) const _AddPetCard(),
             const SizedBox(height: 20),
-            SectionHeader('الأقسام', action: 'الكل', onAction: () => context.go('/categories')),
+            SectionHeader(context.tr('الأقسام', 'Categories'),
+                action: context.tr('الكل', 'All'), onAction: () => context.go('/categories')),
             const SizedBox(height: 4),
             config.when(
               data: (c) => _CategoryRow(categories: c.categories),
@@ -82,12 +96,49 @@ class HomeScreen extends ConsumerWidget {
               const SizedBox(height: 16),
               _Banners(banners: config.value!.banners),
             ],
-            const SizedBox(height: 16),
-            SectionHeader(pet != null ? 'مختار لـ${pet.name}' : 'عروض اليوم',
-                action: 'عرض الكل', onAction: () => context.push('/offers')),
-            const SizedBox(height: 4),
-            const _ForPetRow(),
-            const SizedBox(height: 8),
+            ProductRail(
+              title: pet != null ? context.tr('مختار لـ${pet.name}', 'Picked for ${pet.name}') : context.tr('عروض اليوم', "Today's offers"),
+              icon: pet != null ? Icons.pets_rounded : Icons.local_offer_outlined,
+              products: ref.watch(forPetProvider),
+              action: context.tr('عرض الكل', 'See all'),
+              onAction: () => context.push('/offers'),
+              hideWhenEmpty: false,
+              onRetry: () => ref.invalidate(forPetProvider),
+            ),
+            ProductRail(
+              title: context.tr('اشتريته قبل', 'Buy again'),
+              icon: Icons.autorenew_rounded,
+              products: ref.watch(purchasedProductsProvider),
+              action: context.tr('طلباتي', 'My orders'),
+              onAction: () => context.go('/orders'),
+            ),
+            ProductRail(
+              title: context.tr('الأكثر مبيعاً$forKind', 'Best sellers$forKind'),
+              icon: Icons.local_fire_department_outlined,
+              products: ref.watch(bestSellersProvider),
+              action: context.tr('عرض الكل', 'See all'),
+              onAction: () => context.push('/best-sellers${petCat == null ? '' : '?cat=$petCat'}'),
+              hideWhenEmpty: false,
+              onRetry: () => ref.invalidate(bestSellersProvider),
+            ),
+            const _RecentlyViewed(),
+            if (popular.isNotEmpty) _PopularSearches(items: popular),
+            ProductRail(
+              title: context.tr('وصل حديثاً$forKind', 'New arrivals$forKind'),
+              icon: Icons.fiber_new_outlined,
+              products: ref.watch(newArrivalsProvider),
+              action: context.tr('عرض الكل', 'See all'),
+              onAction: () => context.push('/new${petCat == null ? '' : '?cat=$petCat'}'),
+            ),
+            if (pet != null)
+              ProductRail(
+                title: context.tr('العروض', 'Offers'),
+                icon: Icons.local_offer_outlined,
+                products: ref.watch(offersProvider),
+                action: context.tr('عرض الكل', 'See all'),
+                onAction: () => context.push('/offers'),
+              ),
+            const SizedBox(height: 20),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: _DeliveryNote(text: config.valueOrNull?.deliveryRiyadh),
@@ -99,29 +150,53 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _SearchField extends StatelessWidget {
+class _SearchBar extends StatelessWidget {
+  const _SearchBar();
+
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: C.surface,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => context.push('/search'),
-        child: const SizedBox(
-          height: 50,
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Icon(Icons.search_rounded, color: C.muted),
-                SizedBox(width: 10),
-                Text('دوّر أكل، رمل، ألعاب…', style: TextStyle(color: C.muted, fontSize: 15)),
-              ],
+    return Row(
+      children: [
+        Expanded(
+          child: Material(
+            color: C.surface,
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => context.push('/search'),
+              child: SizedBox(
+                height: 50,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.search_rounded, color: C.muted),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(context.tr('وش تدور؟ أكل، رمل، ألعاب…', 'What are you looking for?'),
+                            maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: C.muted, fontSize: 15)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ),
-      ),
+        const SizedBox(width: 10),
+        Tooltip(
+          message: context.tr('مساعد دكان', 'Dokan assistant'),
+          child: Material(
+            color: C.primary,
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => context.push('/assistant'),
+              child: const SizedBox(width: 50, height: 50, child: Icon(Icons.auto_awesome_rounded, color: C.accent)),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -167,7 +242,7 @@ class _PetSwitcher extends ConsumerWidget {
             ),
           Semantics(
             button: true,
-            label: 'أضف حيوان',
+            label: context.tr('أضف حيوان', 'Add a pet'),
             child: GestureDetector(
               onTap: () async {
                 if (await requireLogin(context, ref) && context.mounted) context.push('/pet-edit');
@@ -177,14 +252,12 @@ class _PetSwitcher extends ConsumerWidget {
                   Container(
                     width: 58,
                     height: 58,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: C.faint, width: 1.5),
-                    ),
+                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: C.faint, width: 1.5)),
                     child: const Icon(Icons.add_rounded, color: C.muted),
                   ),
                   const SizedBox(height: 6),
-                  const Text('أضف', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: C.muted)),
+                  Text(context.tr('أضف', 'Add'),
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: C.muted)),
                 ],
               ),
             ),
@@ -204,7 +277,9 @@ class _ReorderCard extends ConsumerWidget {
     final stock = ref.watch(petStockProvider(pet.id)).valueOrNull ?? const <StockItem>[];
     if (stock.isEmpty) return const SizedBox.shrink();
     final item = (stock.toList()..sort((a, b) => a.daysLeft.compareTo(b.daysLeft))).first;
-    final title = item.low ? 'أكل ${pet.name} قرب يخلص' : '${item.name} يكفي ${pet.name} للحين';
+    final title = item.low
+        ? context.tr('أكل ${pet.name} قرب يخلص', "${pet.name}'s food is running low")
+        : context.tr('${item.name} يكفي ${pet.name} للحين', '${pet.name} still has ${item.name}');
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
       child: Container(
@@ -225,17 +300,19 @@ class _ReorderCard extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Row(children: [
-                          Icon(Icons.autorenew_rounded, size: 14, color: Color(0xFFFFC8A1)),
-                          SizedBox(width: 6),
-                          Text('تذكير إعادة الطلب',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFFFFC8A1))),
+                        Row(children: [
+                          const Icon(Icons.autorenew_rounded, size: 14, color: Color(0xFFFFC8A1)),
+                          const SizedBox(width: 6),
+                          Text(context.tr('تذكير إعادة الطلب', 'Reorder reminder'),
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFFFFC8A1))),
                         ]),
                         const SizedBox(height: 6),
                         Text(title, style: display(18, color: Colors.white)),
                         const SizedBox(height: 4),
                         Text(
-                          item.daysLeft <= 0 ? 'المفروض خلص، اطلبه الحين' : 'باقي تقريباً ${item.daysLeft} أيام',
+                          item.daysLeft <= 0
+                              ? context.tr('المفروض خلص، اطلبه الحين', 'Probably finished — order now')
+                              : context.tr('باقي تقريباً ${item.daysLeft} أيام', 'About ${item.daysLeft} days left'),
                           style: const TextStyle(fontSize: 13, color: Color(0xFFCFE3DD)),
                         ),
                       ],
@@ -250,7 +327,7 @@ class _ReorderCard extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 14),
                     ),
                     onPressed: () => context.push('/product/${item.productId}'),
-                    child: const Text('اطلبه'),
+                    child: Text(context.tr('اطلبه', 'Order')),
                   ),
                 ],
               ),
@@ -285,18 +362,17 @@ class _AddPetCard extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('عرّفنا على حيوانك', style: display(18, color: Colors.white)),
+                      Text(context.tr('عرّفنا على حيوانك', 'Tell us about your pet'), style: display(18, color: Colors.white)),
                       const SizedBox(height: 4),
-                      const Text('نقترح لك اللي يناسبه ونذكرك قبل ما يخلص أكله',
-                          style: TextStyle(fontSize: 13, color: Color(0xFFCFE3DD))),
+                      Text(
+                        context.tr('نقترح لك اللي يناسبه ونذكرك قبل ما يخلص أكله',
+                            "We'll suggest what suits them and remind you before their food runs out"),
+                        style: const TextStyle(fontSize: 13, color: Color(0xFFCFE3DD)),
+                      ),
                     ],
                   ),
                 ),
-                const CircleAvatar(
-                  radius: 24,
-                  backgroundColor: C.accent,
-                  child: Icon(Icons.pets_rounded, color: C.ink),
-                ),
+                const CircleAvatar(radius: 24, backgroundColor: C.accent, child: Icon(Icons.pets_rounded, color: C.ink)),
               ],
             ),
           ),
@@ -331,9 +407,7 @@ class _CategoryRow extends StatelessWidget {
                   SizedBox(width: 66, height: 66, child: NetImage(c.image, tint: C.tints[i % C.tints.length], radius: 18)),
                   const SizedBox(height: 6),
                   Text(c.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                 ],
               ),
             ),
@@ -353,24 +427,23 @@ class _Banners extends StatefulWidget {
 }
 
 class _BannersState extends State<_Banners> {
-  final _page = PageController(viewportFraction: 0.9);
+  final _controller = PageController(viewportFraction: 0.9);
 
   @override
   void dispose() {
-    _page.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final banners = widget.banners;
     return SizedBox(
       height: 150,
       child: PageView.builder(
-        controller: _page,
-        itemCount: banners.length,
+        controller: _controller,
+        itemCount: widget.banners.length,
         itemBuilder: (context, i) {
-          final b = banners[i];
+          final b = widget.banners[i];
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: Semantics(
@@ -393,24 +466,51 @@ class _BannersState extends State<_Banners> {
   }
 }
 
-class _ForPetRow extends ConsumerWidget {
-  const _ForPetRow();
+class _RecentlyViewed extends ConsumerWidget {
+  const _RecentlyViewed();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final products = ref.watch(forPetProvider);
-    return products.when(
-      loading: () => const LoadingBox(height: 250),
-      error: (e, _) => ErrorBox(e, onRetry: () => ref.invalidate(forPetProvider)),
-      data: (list) => SizedBox(
-        height: 262,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          itemCount: list.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 12),
-          itemBuilder: (_, i) => ProductCard(list[i], index: i),
-        ),
+    if (ref.watch(recentlyViewedProvider).isEmpty) return const SizedBox.shrink();
+    return ProductRail(
+      title: context.tr('شاهدتها مؤخراً', 'Recently viewed'),
+      icon: Icons.history_rounded,
+      products: ref.watch(recentlyViewedProductsProvider),
+      action: context.tr('مسح', 'Clear'),
+      onAction: () => ref.read(recentlyViewedProvider.notifier).clear(),
+    );
+  }
+}
+
+class _PopularSearches extends StatelessWidget {
+  const _PopularSearches({required this.items});
+  final List<String> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(context.tr('الناس تدوّر على', 'People are searching for'), style: display(17)),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final q in items.take(10))
+                ActionChip(
+                  label: Text(q),
+                  avatar: const Icon(Icons.trending_up_rounded, size: 16, color: C.primary),
+                  onPressed: () => context.push('/search?q=${Uri.encodeComponent(q)}'),
+                  backgroundColor: C.surface,
+                  side: BorderSide.none,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(R.chip)),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -430,8 +530,10 @@ class _DeliveryNote extends StatelessWidget {
           const Icon(Icons.local_shipping_outlined, color: C.primary),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(text ?? 'داخل الرياض: يوصلك اليوم إذا طلبت قبل ٣ العصر',
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: C.primaryDeep)),
+            child: Text(
+              text ?? context.tr('داخل الرياض: يوصلك اليوم إذا طلبت قبل ٣ العصر', 'Riyadh: same-day delivery before 3 PM'),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: C.primaryDeep),
+            ),
           ),
         ],
       ),

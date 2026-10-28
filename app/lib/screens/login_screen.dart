@@ -6,11 +6,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../api/client.dart';
+import '../l10n/lang.dart';
 import '../state/providers.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/permission_prompts.dart';
 
-/// Login with the phone number, same account as the website.
+const _whatsappGreen = Color(0xFF1FA855);
+
+/// Login with the phone number (code by WhatsApp or SMS) — same account as the website.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -25,6 +29,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _sent = false;
   bool _needName = false;
   bool _busy = false;
+  String _channel = '';
   int _wait = 0;
   Timer? _timer;
 
@@ -37,12 +42,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
-  String get _digits => _phone.text.replaceAll(RegExp(r'[^0-9]'), '');
-
-  bool get _validPhone {
-    final d = _digits;
-    return RegExp(r'^(05\d{8}|5\d{8}|9665\d{8}|009665\d{8})$').hasMatch(d);
+  String get _digits {
+    // Accept Arabic-Indic digits too.
+    const ar = '٠١٢٣٤٥٦٧٨٩';
+    var s = _phone.text;
+    for (var i = 0; i < 10; i++) {
+      s = s.replaceAll(ar[i], '$i');
+    }
+    return s.replaceAll(RegExp(r'[^0-9]'), '');
   }
+
+  bool get _validPhone => RegExp(r'^(05\d{8}|5\d{8}|9665\d{8}|009665\d{8})$').hasMatch(_digits);
 
   void _startTimer() {
     _timer?.cancel();
@@ -57,13 +67,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
   }
 
-  Future<void> _send() async {
-    if (!_validPhone) return showMessage(context, 'اكتب رقم جوال سعودي صحيح مثل 05xxxxxxxx', error: true);
+  Future<void> _send(String? channel) async {
+    if (!_validPhone) {
+      return showMessage(context, context.tr('اكتب رقم جوال سعودي صحيح مثل 05xxxxxxxx', 'Enter a valid Saudi mobile number, e.g. 05xxxxxxxx'),
+          error: true);
+    }
     setState(() => _busy = true);
     try {
-      await ref.read(sessionProvider.notifier).requestOtp(_digits);
+      final used = await ref.read(sessionProvider.notifier).requestOtp(_digits, channel: channel);
       if (!mounted) return;
-      setState(() => _sent = true);
+      setState(() {
+        _sent = true;
+        _channel = used.isNotEmpty ? used : (channel ?? '');
+      });
       _startTimer();
     } catch (e) {
       if (mounted) showMessage(context, e, error: true);
@@ -74,16 +90,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _verify() async {
     if (_code.text.trim().length < 4) return;
-    if (_needName && _name.text.trim().isEmpty) return showMessage(context, 'اكتب اسمك', error: true);
+    if (_needName && _name.text.trim().isEmpty) {
+      return showMessage(context, context.tr('اكتب اسمك', 'Enter your name'), error: true);
+    }
     setState(() => _busy = true);
     try {
-      await ref.read(sessionProvider.notifier).verifyOtp(_digits, _code.text.trim(), name: _name.text.trim());
+      final linked = await ref.read(sessionProvider.notifier).verifyOtp(_digits, _code.text.trim(), name: _name.text.trim());
+      if (!mounted) return;
+      if (linked > 0) {
+        showMessage(
+          context,
+          context.tr('ربطنا $linked طلب سابق برقمك بحسابك', 'We linked $linked earlier order(s) placed with your number to your account'),
+        );
+      }
+      // Ask for notifications right after login so the customer can follow their orders.
+      await askNotifications(context);
       if (mounted) context.pop(true);
     } on ApiError catch (e) {
       final wantsName = (e.code ?? '').contains('name');
       if (wantsName && !_needName && mounted) {
         setState(() => _needName = true);
-        showMessage(context, 'أهلاً فيك! اكتب اسمك عشان ننشئ حسابك');
+        showMessage(context, context.tr('أهلاً فيك! اكتب اسمك عشان ننشئ حسابك', 'Welcome! Enter your name to create your account'));
       } else if (mounted) {
         showMessage(context, e.message, error: true);
       }
@@ -94,11 +121,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final channels = ref.watch(configProvider).valueOrNull?.otpChannels ?? const <String>[];
+    final sentVia = _channel == 'whatsapp'
+        ? context.tr('على واتساب', 'on WhatsApp')
+        : _channel == 'sms'
+            ? context.tr('برسالة نصية', 'by SMS')
+            : '';
+    final other = _channel == 'whatsapp' ? 'sms' : 'whatsapp';
+
     return Scaffold(
       appBar: AppBar(
         leading: Padding(
           padding: const EdgeInsets.all(5),
-          child: RoundIconButton(icon: Icons.close_rounded, label: 'إغلاق', onTap: () => context.pop(false)),
+          child: RoundIconButton(icon: Icons.close_rounded, label: context.tr('إغلاق', 'Close'), onTap: () => context.pop(false)),
         ),
       ),
       body: ListView(
@@ -106,10 +141,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         children: [
           const CircleAvatar(radius: 34, backgroundColor: C.peach, child: Icon(Icons.pets_rounded, color: C.accentText, size: 32)),
           const SizedBox(height: 18),
-          Text(_sent ? 'اكتب الرمز' : 'أهلاً في دكان', style: display(26, weight: FontWeight.w700)),
+          Text(_sent ? context.tr('اكتب الرمز', 'Enter the code') : context.tr('أهلاً في دكان', 'Welcome to Dokan'),
+              style: display(26, weight: FontWeight.w700)),
           const SizedBox(height: 6),
           Text(
-            _sent ? 'أرسلنا رمز التحقق إلى ${_phone.text}' : 'سجّل برقم جوالك، نفس حسابك في موقع دكان',
+            _sent
+                ? context.tr('أرسلنا رمز التحقق $sentVia إلى ${_phone.text}', 'We sent a code $sentVia to ${_phone.text}')
+                : context.tr('سجّل برقم جوالك، نفس حسابك في موقع دكان', 'Sign in with your mobile number — same account as dokansa.com'),
             style: const TextStyle(color: C.muted, fontSize: 15),
           ),
           const SizedBox(height: 24),
@@ -120,13 +158,40 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               textDirection: TextDirection.ltr,
               autofocus: true,
               autofillHints: const [AutofillHints.telephoneNumber],
-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9+ ]')), LengthLimitingTextInputFormatter(16)],
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩+ ]')),
+                LengthLimitingTextInputFormatter(16),
+              ],
               style: const TextStyle(fontSize: 18, letterSpacing: 1),
               decoration: const InputDecoration(hintText: '05xxxxxxxx', prefixIcon: Icon(Icons.phone_iphone_rounded)),
-              onSubmitted: (_) => _send(),
+              onSubmitted: (_) => _send(channels.isEmpty ? null : channels.first),
             ),
             const SizedBox(height: 16),
-            FilledButton(onPressed: _busy ? null : _send, child: _busy ? const _Spinner() : const Text('أرسل الرمز')),
+            if (channels.isEmpty)
+              FilledButton(
+                onPressed: _busy ? null : () => _send(null),
+                child: _busy ? const _Spinner() : Text(context.tr('أرسل الرمز', 'Send code')),
+              ),
+            for (final c in channels) ...[
+              FilledButton.icon(
+                style: c == 'whatsapp' ? FilledButton.styleFrom(backgroundColor: _whatsappGreen) : null,
+                onPressed: _busy ? null : () => _send(c),
+                icon: Icon(c == 'whatsapp' ? Icons.chat_rounded : Icons.sms_outlined),
+                label: Text(c == 'whatsapp'
+                    ? context.tr('أرسل الرمز على واتساب', 'Send code on WhatsApp')
+                    : context.tr('أرسل الرمز برسالة SMS', 'Send code by SMS')),
+              ),
+              const SizedBox(height: 10),
+            ],
+            const SizedBox(height: 6),
+            InkWell(
+              onTap: () => context.push('/policies'),
+              child: Text(
+                context.tr('بالمتابعة أنت توافق على الشروط وسياسة الخصوصية', 'By continuing you agree to the terms and privacy policy'),
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 12, color: C.muted, decoration: TextDecoration.underline),
+              ),
+            ),
           ] else ...[
             TextField(
               controller: _code,
@@ -144,25 +209,37 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
             if (_needName) ...[
               const SizedBox(height: 10),
-              TextField(controller: _name, decoration: const InputDecoration(labelText: 'اسمك')),
+              TextField(controller: _name, decoration: InputDecoration(labelText: context.tr('اسمك', 'Your name'))),
             ],
             const SizedBox(height: 16),
-            FilledButton(onPressed: _busy ? null : _verify, child: _busy ? const _Spinner() : const Text('دخول')),
+            FilledButton(
+              onPressed: _busy ? null : _verify,
+              child: _busy ? const _Spinner() : Text(context.tr('دخول', 'Sign in')),
+            ),
             const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            Wrap(
+              alignment: WrapAlignment.center,
               children: [
                 TextButton(
                   onPressed: () => setState(() {
                     _sent = false;
                     _code.clear();
                   }),
-                  child: const Text('غيّر الرقم'),
+                  child: Text(context.tr('غيّر الرقم', 'Change number')),
                 ),
                 TextButton(
-                  onPressed: _wait > 0 || _busy ? null : _send,
-                  child: Text(_wait > 0 ? 'إعادة الإرسال بعد $_wait ث' : 'أعد إرسال الرمز'),
+                  onPressed: _wait > 0 || _busy ? null : () => _send(_channel.isEmpty ? null : _channel),
+                  child: Text(_wait > 0
+                      ? context.tr('إعادة الإرسال بعد $_wait ث', 'Resend in ${_wait}s')
+                      : context.tr('أعد إرسال الرمز', 'Resend code')),
                 ),
+                if (channels.contains(other) && _channel.isNotEmpty)
+                  TextButton(
+                    onPressed: _wait > 0 || _busy ? null : () => _send(other),
+                    child: Text(other == 'sms'
+                        ? context.tr('أرسله برسالة SMS بدلاً', 'Send by SMS instead')
+                        : context.tr('أرسله على واتساب بدلاً', 'Send on WhatsApp instead')),
+                  ),
               ],
             ),
           ],

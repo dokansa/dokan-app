@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../l10n/lang.dart';
 import '../models/models.dart';
+import '../services/local_store.dart';
 import '../state/providers.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/product_rail.dart';
 
 class ProductScreen extends ConsumerWidget {
   const ProductScreen({super.key, required this.id});
@@ -17,7 +20,10 @@ class ProductScreen extends ConsumerWidget {
     return product.when(
       loading: () => const Scaffold(body: LoadingBox()),
       error: (e, _) => Scaffold(
-        appBar: AppBar(leading: const Padding(padding: EdgeInsets.all(5), child: RoundIconButton(icon: Icons.arrow_back_rounded, label: 'رجوع'))),
+        appBar: AppBar(
+            leading: Padding(
+                padding: const EdgeInsets.all(5),
+                child: RoundIconButton(icon: Icons.arrow_back_rounded, label: context.tr('رجوع', 'Back')))),
         body: ErrorBox(e, onRetry: () => ref.invalidate(productProvider(id))),
       ),
       data: (p) => _ProductView(product: p),
@@ -48,6 +54,10 @@ class _ProductViewState extends ConsumerState<_ProductView> {
   void initState() {
     super.initState();
     if (p.isVariable) _pick(p.variations.first);
+    // Remember it for "Recently viewed" (after the first frame: providers can't change during build).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(recentlyViewedProvider.notifier).add(p.id);
+    });
   }
 
   Future<void> _pick(ProductVariation v) async {
@@ -75,7 +85,7 @@ class _ProductViewState extends ConsumerState<_ProductView> {
       }
       if (!mounted) return;
       setState(() => _added = true);
-      showMessage(context, 'انضاف للسلة');
+      showMessage(context, context.tr('انضاف للسلة', 'Added to cart'));
     } catch (e) {
       if (mounted) showMessage(context, e, error: true);
     } finally {
@@ -147,7 +157,7 @@ class _ProductViewState extends ConsumerState<_ProductView> {
                     Text(p.name, style: display(22)),
                     const SizedBox(height: 16),
                     if (p.isVariable) ...[
-                      const Text('الخيارات', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      Text(context.tr('الخيارات', 'Options'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 8,
@@ -179,7 +189,8 @@ class _ProductViewState extends ConsumerState<_ProductView> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            config?.deliveryRiyadh ?? 'داخل الرياض: يوصلك اليوم إذا طلبت قبل ٣ العصر',
+                            config?.deliveryRiyadh ??
+                                context.tr('داخل الرياض: يوصلك اليوم إذا طلبت قبل ٣ العصر', 'Riyadh: same-day delivery before 3 PM'),
                             style: const TextStyle(fontSize: 13),
                           ),
                         ),
@@ -187,12 +198,12 @@ class _ProductViewState extends ConsumerState<_ProductView> {
                     ),
                     if (!shown.inStock) ...[
                       const SizedBox(height: 12),
-                      const Text('نفد من المخزون حالياً',
-                          style: TextStyle(color: C.accentText, fontWeight: FontWeight.w700)),
+                      Text(context.tr('نفد من المخزون حالياً', 'Out of stock right now'),
+                          style: const TextStyle(color: C.accentText, fontWeight: FontWeight.w700)),
                     ],
                     if (p.shortDescription.isNotEmpty || p.description.isNotEmpty) ...[
                       const SizedBox(height: 20),
-                      Text('عن المنتج', style: display(16)),
+                      Text(context.tr('عن المنتج', 'About this product'), style: display(16)),
                       const SizedBox(height: 6),
                       Text(
                         p.shortDescription.isNotEmpty ? p.shortDescription : p.description,
@@ -202,6 +213,7 @@ class _ProductViewState extends ConsumerState<_ProductView> {
                   ],
                 ),
               ),
+              if (p.categoryIds.isNotEmpty) _Similar(product: p),
             ],
           ),
           PositionedDirectional(
@@ -210,11 +222,11 @@ class _ProductViewState extends ConsumerState<_ProductView> {
             end: 20,
             child: Row(
               children: [
-                const RoundIconButton(icon: Icons.arrow_back_rounded, label: 'رجوع'),
+                RoundIconButton(icon: Icons.arrow_back_rounded, label: context.tr('رجوع', 'Back')),
                 const Spacer(),
                 RoundIconButton(
                   icon: Icons.shopping_bag_outlined,
-                  label: 'السلة',
+                  label: context.tr('السلة', 'Cart'),
                   onTap: () => context.go('/cart'),
                 ),
               ],
@@ -244,13 +256,13 @@ class _ProductViewState extends ConsumerState<_ProductView> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
-                  tooltip: 'أنقص الكمية',
+                  tooltip: context.tr('أنقص الكمية', 'Decrease quantity'),
                   onPressed: _qty > 1 ? () => setState(() => _qty--) : null,
                   icon: const Icon(Icons.remove_rounded),
                 ),
                 Text('$_qty', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
                 IconButton(
-                  tooltip: 'زِد الكمية',
+                  tooltip: context.tr('زِد الكمية', 'Increase quantity'),
                   onPressed: () => setState(() => _qty++),
                   icon: const Icon(Icons.add_rounded),
                 ),
@@ -264,7 +276,7 @@ class _ProductViewState extends ConsumerState<_ProductView> {
               onPressed: _adding || !shown.inStock ? null : (_added ? () => context.go('/cart') : _add),
               child: _adding
                   ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
-                  : Text(_added ? 'روح للسلة' : 'أضف للسلة'),
+                  : Text(_added ? context.tr('روح للسلة', 'Go to cart') : context.tr('أضف للسلة', 'Add to cart')),
             ),
           ),
         ],
@@ -279,17 +291,17 @@ class _PetBadge extends StatelessWidget {
   final Product product;
 
   static const _kindWords = {
-    'cat': ['قط', 'قطط'],
-    'dog': ['كلب', 'كلاب', 'جرو'],
-    'bird': ['طير', 'طيور', 'عصافير', 'ببغاء'],
-    'fish': ['سمك', 'أسماك', 'حوض'],
-    'small': ['أرانب', 'أرنب', 'هامستر', 'سلاحف', 'صغيرة'],
+    'cat': ['قط', 'قطط', 'cat', 'kitten'],
+    'dog': ['كلب', 'كلاب', 'جرو', 'dog', 'puppy'],
+    'bird': ['طير', 'طيور', 'عصافير', 'ببغاء', 'bird'],
+    'fish': ['سمك', 'أسماك', 'حوض', 'fish', 'aquarium'],
+    'small': ['أرانب', 'أرنب', 'هامستر', 'سلاحف', 'صغيرة', 'rabbit', 'hamster', 'turtle', 'small'],
   };
 
   @override
   Widget build(BuildContext context) {
     final words = _kindWords[pet.kind] ?? const [];
-    final hay = '${product.name} ${product.categories.join(' ')}';
+    final hay = '${product.name} ${product.categories.join(' ')}'.toLowerCase();
     if (!words.any(hay.contains)) return const SizedBox.shrink();
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -300,9 +312,26 @@ class _PetBadge extends StatelessWidget {
         children: [
           const Icon(Icons.check_rounded, size: 15, color: C.primary),
           const SizedBox(width: 6),
-          Text('مناسب لـ${pet.name}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: C.primary)),
+          Text(context.tr('مناسب لـ${pet.name}', 'Good for ${pet.name}'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: C.primary)),
         ],
       ),
+    );
+  }
+}
+
+
+/// "You may also like": best sellers from the same category.
+class _Similar extends ConsumerWidget {
+  const _Similar({required this.product});
+  final Product product;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final res = ref.watch(productsProvider(ProductQuery(category: product.categoryIds.last, orderBy: 'popularity')));
+    return ProductRail(
+      title: context.tr('ممكن يعجبك كمان', 'You may also like'),
+      icon: Icons.thumb_up_alt_outlined,
+      products: res.whenData((l) => l.where((x) => x.id != product.id).toList()),
     );
   }
 }

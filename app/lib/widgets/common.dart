@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../l10n/lang.dart';
 import '../models/models.dart';
 import '../state/providers.dart';
 import '../theme.dart';
@@ -144,7 +145,7 @@ class _ProductCardState extends ConsumerState<ProductCard> {
     setState(() => _busy = true);
     try {
       await ref.read(cartProvider.notifier).add(p.id, 1);
-      if (mounted) showMessage(context, 'انضاف للسلة');
+      if (mounted) showMessage(context, context.tr('انضاف للسلة', 'Added to cart'));
     } catch (e) {
       if (mounted) showMessage(context, e, error: true);
     } finally {
@@ -182,7 +183,7 @@ class _ProductCardState extends ConsumerState<ProductCard> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(color: C.accentText, borderRadius: BorderRadius.circular(R.chip)),
-                            child: const Text('خصم',
+                            child: Text(context.tr('خصم', 'Sale'),
                                 style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
                           ),
                         ),
@@ -200,7 +201,7 @@ class _ProductCardState extends ConsumerState<ProductCard> {
                     Expanded(child: PriceText(p)),
                     Semantics(
                       button: true,
-                      label: 'أضف للسلة',
+                      label: context.tr('أضف للسلة', 'Add to cart'),
                       child: InkResponse(
                         onTap: _busy ? null : _quickAdd,
                         radius: 24,
@@ -328,7 +329,7 @@ class ErrorBox extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(error.toString(), textAlign: TextAlign.center, style: const TextStyle(color: C.muted)),
-            if (onRetry != null) TextButton(onPressed: onRetry, child: const Text('حاول مرة ثانية')),
+            if (onRetry != null) TextButton(onPressed: onRetry, child: Text(context.tr('حاول مرة ثانية', 'Try again'))),
           ],
         ),
       );

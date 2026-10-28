@@ -73,3 +73,70 @@ Orders placed through the app: `created_via = "dokan-app"`, meta `_dokan_app_ord
 
 ## Days of supply
 Product meta `_dokan_app_days_supply` (int, editable in product edit screen, "مدة الكفاية بالأيام"). If empty and product is in a food or litter category, estimate from weight: `weight_kg * 15` days (filterable `dokan_app_days_supply`). Items without it are not tracked.
+
+---
+
+# v1.1 — Smart search, assistant, home sections
+
+## Config additions (`GET /config`)
+```
+popular_searches: [string]          // owner-set in settings, else derived from top searches / categories
+pet_categories: {cat:int|null, dog:int|null, bird:int|null, fish:int|null, small:int|null}   // top-level Arabic category per pet kind
+assistant_enabled: bool             // true when a Claude API key is configured and the assistant switch is on
+```
+
+## `GET /search` (auth optional)
+Query: `q` (required, ≤120 chars), `pet_id` (optional; uses that pet's kind/stage as soft context), `ai` (`0`|`1`, default 0 — 1 = allow Claude to interpret; the app sends 0 while typing and 1 on submit), `log` (`0`|`1` — 1 on submit, records the query for the owner's report), `per_page` (default 40, max 60).
+
+Response:
+```
+{
+  query: string,
+  understood: [{type: "pet"|"category"|"type"|"stage"|"health"|"brand"|"price"|"sort"|"keyword", label: string (Arabic, shown as a chip), value: string}],
+  reply: string,                    // short Arabic line, may be "" (e.g. "لقينا ٢٤ منتج أكل رطب للقطط البالغة")
+  product_ids: [int],               // best first
+  total: int,
+  suggestions: [string],            // did-you-mean / related searches (Arabic), up to 6
+  categories: [{id:int, name:string}],  // matching categories to jump to, up to 4
+  ai: bool                          // true if Claude was used for this answer
+}
+```
+Must answer in < 400 ms for `ai=0` (in-memory index, see plugin notes). Never errors on "no results": returns empty `product_ids` with `suggestions`.
+
+## `POST /assistant` (auth optional)
+Body: `{messages: [{role: "user"|"assistant", content: string}], pet_id?: string}` — at most 10 messages, each ≤ 600 chars, last one is the user's.
+Response: `{reply: string, product_ids: [int] (≤ 6), chips: [string] (≤ 4 short follow-up suggestions), ai: bool}`.
+If no Claude key / assistant off / Claude fails → still answers using rule-based search with a templated reply (`ai:false`).
+Rate limit: 30 assistant calls / hour per user (or IP when guest) → 429 `dokan_app_rate_limited`.
+
+## `GET /me/purchased` (auth)
+`[int]` product ids the customer bought before, most frequent / recent first, up to 20, only products still published and in stock.
+
+---
+
+# v1.2 — Language, login channel, order linking, location, policies
+
+## Language (Arabic + English)
+- The app sends `lang=ar|en` as a query parameter on EVERY request (Store API and dokan-app), plus `Accept-Language`.
+- Store API: Polylang already filters products/categories by `lang` (verified on staging).
+- dokan-app routes must honour `lang`: categories / pet_categories / popular_searches / policies in that language; every user-facing string (errors, search `reply`, `understood` labels, `suggestions`, assistant `reply`/`chips`, OTP message text, push titles/bodies for that customer — store the customer's last used lang in user meta `_dokan_app_lang`) in Arabic or English. Search index is built per language. Default `ar`.
+
+## Config additions
+```
+otp_channels: ["whatsapp","sms"]     // only the channels that are configured; order = preference
+policies: [{key: "privacy"|"returns"|"shipping"|"terms"|"complaints", title: string, page_id: int|null, content_html: string|null}]
+          // page_id when a WP page is chosen (content via /pages/<id>); for "complaints" content_html comes from a settings textarea (ar + en)
+```
+Delivery notes get English variants in settings (`delivery_note_riyadh_en`, `delivery_note_ksa_en`); config returns the one for `lang`.
+
+## `POST /auth/otp/request`
+Body adds optional `channel: "whatsapp"|"sms"`. If the chosen channel fails or isn't configured and the other one is, fall back to it. Response: `{ok: true, ttl: 300, channel: "whatsapp"|"sms"}` (channel actually used).
+
+## Linking customers to their orders
+After a successful `/auth/otp/verify` (and `/auth/login`), attach the customer's past **guest** orders (customer_id = 0) whose billing phone matches the account phone (compare last 9 digits, normalised) to the account. Run it in batches (max 200 per login), idempotent. Response adds `linked_orders: int` (how many were attached this time). Also: when an order is placed by a logged-in app customer, store their normalised phone on the order as billing phone if empty.
+
+## `GET /pages/<id>`
+Only for pages selected as policies. `{id, title, content_html}` in the requested lang (Polylang translation of the page when it exists). Content passed through `apply_filters('the_content')` and `wp_kses_post`.
+
+## Checkout extension data (`extensions["dokan-app"]`)
+Adds optional `lat`, `lng` (floats), `accuracy` (metres). Saved to order meta `_dokan_app_lat`, `_dokan_app_lng`, `_dokan_app_loc_accuracy`, plus an order note "موقع العميل على الخريطة: https://maps.google.com/?q=LAT,LNG". Meta keys are filterable (`dokan_app_location_meta_keys`) so they can also be written to the keys the website's own map picker uses.

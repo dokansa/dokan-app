@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
+import '../l10n/lang.dart';
 
 /// Error shown to the customer. [message] is already Arabic.
 class ApiError implements Exception {
@@ -51,7 +52,9 @@ class ApiClient {
       onRequest: (options, handler) {
         options.headers['X-Dokan-App'] = '1';
         options.headers['X-Dokan-App-Platform'] = Platform.isIOS ? 'ios' : 'android';
-        options.headers['Accept-Language'] = 'ar';
+        options.headers['Accept-Language'] = AppLang.code;
+        // Store content (Polylang) and the app plugin both follow `lang`.
+        options.queryParameters = {...options.queryParameters, 'lang': AppLang.code};
         if (AppConfig.stagingCookie.isNotEmpty) {
           options.headers['Cookie'] = 'dk_stg=${AppConfig.stagingCookie}';
         }
@@ -132,13 +135,13 @@ class ApiClient {
       if (e.response != null) {
         res = e.response!;
       } else {
-        throw ApiError('تأكد من اتصالك بالإنترنت وحاول مرة ثانية');
+        throw ApiError(AppLang.t('تأكد من اتصالك بالإنترنت وحاول مرة ثانية', 'Check your internet connection and try again'));
       }
     }
     final status = res.statusCode ?? 0;
     if (status >= 200 && status < 300) return res.data;
     final data = res.data;
-    String msg = 'صار خطأ، حاول مرة ثانية';
+    String msg = AppLang.t('صار خطأ، حاول مرة ثانية', 'Something went wrong, please try again');
     String? code;
     if (data is Map) {
       code = data['code']?.toString();

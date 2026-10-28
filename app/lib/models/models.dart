@@ -1,5 +1,7 @@
 import 'package:html_unescape/html_unescape.dart';
 
+import '../l10n/lang.dart';
+
 final _unescape = HtmlUnescape();
 
 String cleanText(dynamic v) {
@@ -25,7 +27,7 @@ class Money {
   String get label {
     final v = value;
     final s = v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
-    return '$s ر.س';
+    return '$s ${currencyLabel(AppLang.isAr)}';
   }
 
   static num _pow10(int n) {
@@ -74,7 +76,10 @@ class Product {
     required this.variations,
     required this.categories,
     required this.permalink,
+    this.categoryIds = const [],
   });
+
+  final List<int> categoryIds;
 
   final int id;
   final String name;
@@ -129,6 +134,7 @@ class Product {
       type: j['type']?.toString() ?? 'simple',
       variations: vars,
       categories: [for (final c in (j['categories'] as List? ?? const [])) cleanText((c as Map)['name'])],
+      categoryIds: [for (final c in (j['categories'] as List? ?? const [])) _int((c as Map)['id'])].where((i) => i > 0).toList(),
       permalink: j['permalink']?.toString() ?? '',
     );
   }
@@ -294,15 +300,8 @@ class AppUser {
       );
 }
 
-const petKinds = {
-  'cat': 'قطة',
-  'dog': 'كلب',
-  'bird': 'طير',
-  'fish': 'سمك',
-  'small': 'حيوان صغير',
-};
-
-const foodTypes = {'dry': 'جاف', 'wet': 'رطب', 'mixed': 'مختلط'};
+const petKindKeys = ['cat', 'dog', 'bird', 'fish', 'small'];
+const foodTypeKeys = ['dry', 'wet', 'mixed'];
 
 class Pet {
   Pet({
@@ -327,14 +326,23 @@ class Pet {
   final String? photo;
   final bool remind;
 
-  String get kindLabel => petKinds[kind] ?? kind;
+  String get kindLabel => petKindLabel(kind, AppLang.isAr);
 
-  String? get ageLabel {
+  int? get ageMonths {
     final d = birthDate == null ? null : DateTime.tryParse(birthDate!);
     if (d == null) return null;
-    final months = (DateTime.now().difference(d).inDays / 30.4).floor();
-    if (months < 12) return '$months شهر';
+    return (DateTime.now().difference(d).inDays / 30.4).floor();
+  }
+
+  bool get isYoung => (ageMonths ?? 99) < 12;
+
+  String? get ageLabel {
+    final months = ageMonths;
+    if (months == null) return null;
+    final ar = AppLang.isAr;
+    if (months < 12) return ar ? '$months شهر' : '$months mo';
     final y = (months / 12).floor();
+    if (!ar) return y == 1 ? '1 year' : '$y years';
     return y == 1 ? 'سنة' : (y == 2 ? 'سنتين' : '$y سنوات');
   }
 
@@ -515,7 +523,18 @@ class StoreConfig {
     required this.whatsapp,
     required this.chatwootBase,
     required this.chatwootToken,
+    this.otpChannels = const [],
+    this.policies = const [],
+    this.popularSearches = const [],
+    this.petCategories = const {},
+    this.assistantEnabled = false,
   });
+
+  final List<String> otpChannels;
+  final List<Policy> policies;
+  final List<String> popularSearches;
+  final Map<String, int> petCategories;
+  final bool assistantEnabled;
 
   final List<PaymentMethod> paymentMethods;
   final List<Category> categories;
@@ -539,12 +558,101 @@ class StoreConfig {
           PromoBanner((b as Map)['image']?.toString() ?? '', cleanText(b['title']), b['link']?.toString() ?? '')
       ],
       deliveryRiyadh: cleanText(j['delivery_note_riyadh']).isEmpty
-          ? 'داخل الرياض: يوصلك اليوم إذا طلبت قبل ٣ العصر'
+          ? AppLang.t('داخل الرياض: يوصلك اليوم إذا طلبت قبل ٣ العصر', 'Riyadh: same-day delivery for orders before 3 PM')
           : cleanText(j['delivery_note_riyadh']),
-      deliveryKsa: cleanText(j['delivery_note_ksa']).isEmpty ? 'باقي مناطق المملكة: من ٢ إلى ٧ أيام' : cleanText(j['delivery_note_ksa']),
+      deliveryKsa: cleanText(j['delivery_note_ksa']).isEmpty
+          ? AppLang.t('باقي مناطق المملكة: من ٢ إلى ٧ أيام', 'Rest of Saudi Arabia: 2–7 days')
+          : cleanText(j['delivery_note_ksa']),
+      otpChannels: [for (final c in (j['otp_channels'] as List? ?? const [])) c.toString()],
+      policies: [
+        for (final p in (j['policies'] as List? ?? const []))
+          Policy(
+            (p as Map)['key']?.toString() ?? '',
+            cleanText(p['title']),
+            p['page_id'] == null ? null : int.tryParse('${p['page_id']}'),
+            p['content_html']?.toString(),
+          )
+      ],
+      popularSearches: [for (final q in (j['popular_searches'] as List? ?? const [])) cleanText(q)],
+      petCategories: {
+        for (final e in ((j['pet_categories'] as Map?) ?? const {}).entries)
+          if (e.value != null) e.key.toString(): int.tryParse('${e.value}') ?? 0
+      },
+      assistantEnabled: j['assistant_enabled'] == true,
       whatsapp: j['whatsapp']?.toString() ?? '',
       chatwootBase: cw['base_url']?.toString() ?? '',
       chatwootToken: cw['website_token']?.toString() ?? '',
     );
   }
+}
+
+
+class Policy {
+  Policy(this.key, this.title, this.pageId, this.contentHtml);
+  final String key;
+  final String title;
+  final int? pageId;
+  final String? contentHtml;
+}
+
+class PageContent {
+  PageContent(this.title, this.html);
+  final String title;
+  final String html;
+}
+
+/// One thing the search understood, shown as a chip ("قطط", "أكل رطب", "أقل من ١٠٠ ر.س").
+class Understood {
+  Understood(this.type, this.label, this.value);
+  final String type;
+  final String label;
+  final String value;
+}
+
+class SearchResult {
+  SearchResult({
+    required this.query,
+    required this.understood,
+    required this.reply,
+    required this.productIds,
+    required this.total,
+    required this.suggestions,
+    required this.categories,
+    required this.ai,
+  });
+
+  final String query;
+  final List<Understood> understood;
+  final String reply;
+  final List<int> productIds;
+  final int total;
+  final List<String> suggestions;
+  final List<Category> categories;
+  final bool ai;
+
+  factory SearchResult.fromJson(Map<String, dynamic> j) => SearchResult(
+        query: j['query']?.toString() ?? '',
+        understood: [
+          for (final u in (j['understood'] as List? ?? const []))
+            Understood((u as Map)['type']?.toString() ?? '', cleanText(u['label']), u['value']?.toString() ?? '')
+        ],
+        reply: cleanText(j['reply']),
+        productIds: [for (final i in (j['product_ids'] as List? ?? const [])) _int(i)].where((i) => i > 0).toList(),
+        total: _int(j['total']),
+        suggestions: [for (final s in (j['suggestions'] as List? ?? const [])) cleanText(s)].where((s) => s.isNotEmpty).toList(),
+        categories: [
+          for (final c in (j['categories'] as List? ?? const [])) Category.fromJson(Map<String, dynamic>.from(c as Map))
+        ],
+        ai: j['ai'] == true,
+      );
+}
+
+class ChatMessage {
+  ChatMessage({required this.fromUser, required this.text, this.productIds = const [], this.chips = const []});
+  final bool fromUser;
+  final String text;
+  final List<int> productIds;
+  final List<String> chips;
+
+  Map<String, dynamic> toJson() => {'role': fromUser ? 'user' : 'assistant', 'content': text};
 }

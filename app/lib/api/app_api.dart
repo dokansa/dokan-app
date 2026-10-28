@@ -12,15 +12,23 @@ class AppApi {
 
   Future<StoreConfig> config() async => StoreConfig.fromJson(_m(await _c.get('$_b/config')));
 
-  Future<void> requestOtp(String phone) => _c.post('$_b/auth/otp/request', body: {'phone': phone});
+  /// Returns the channel the code was actually sent on ("whatsapp" or "sms").
+  Future<String> requestOtp(String phone, {String? channel}) async {
+    final d = _m(await _c.post('$_b/auth/otp/request', body: {
+      'phone': phone,
+      if (channel != null) 'channel': channel,
+    }));
+    return d['channel']?.toString() ?? channel ?? '';
+  }
 
-  Future<(String, AppUser)> verifyOtp(String phone, String code, {String? name}) async {
+  /// Returns the token, the user and how many earlier guest orders were linked to the account.
+  Future<(String, AppUser, int)> verifyOtp(String phone, String code, {String? name}) async {
     final d = _m(await _c.post('$_b/auth/otp/verify', body: {
       'phone': phone,
       'code': code,
       if (name != null && name.isNotEmpty) 'name': name,
     }));
-    return (d['token'].toString(), AppUser.fromJson(_m(d['user'])));
+    return (d['token'].toString(), AppUser.fromJson(_m(d['user'])), int.tryParse('${d['linked_orders'] ?? 0}') ?? 0);
   }
 
   Future<(String, AppUser)> login(String username, String password) async {
@@ -73,6 +81,37 @@ class AppApi {
   Future<String> cancelRequest(int id, String reason) async {
     final d = _m(await _c.post('$_b/orders/$id/cancel-request', body: {'reason': reason}));
     return d['status']?.toString() ?? '';
+  }
+
+  Future<SearchResult> search(String q, {String? petId, bool ai = false, bool log = false}) async =>
+      SearchResult.fromJson(_m(await _c.get('$_b/search', query: {
+        'q': q,
+        if (petId != null) 'pet_id': petId,
+        'ai': ai ? 1 : 0,
+        'log': log ? 1 : 0,
+      })));
+
+  Future<ChatMessage> assistant(List<ChatMessage> messages, {String? petId}) async {
+    final d = _m(await _c.post('$_b/assistant', body: {
+      'messages': [for (final m in messages.length > 10 ? messages.sublist(messages.length - 10) : messages) m.toJson()],
+      if (petId != null) 'pet_id': petId,
+    }));
+    return ChatMessage(
+      fromUser: false,
+      text: cleanText(d['reply']),
+      productIds: [for (final i in (d['product_ids'] as List? ?? const [])) int.tryParse('$i') ?? 0].where((i) => i > 0).toList(),
+      chips: [for (final c in (d['chips'] as List? ?? const [])) cleanText(c)].where((c) => c.isNotEmpty).toList(),
+    );
+  }
+
+  Future<List<int>> purchased() async {
+    final d = await _c.get('$_b/me/purchased');
+    return [for (final i in (d as List)) int.tryParse('$i') ?? 0].where((i) => i > 0).toList();
+  }
+
+  Future<PageContent> page(int id) async {
+    final d = _m(await _c.get('$_b/pages/$id'));
+    return PageContent(cleanText(d['title']), d['content_html']?.toString() ?? '');
   }
 
   Future<List<int>> recommendations({String? petId}) async {

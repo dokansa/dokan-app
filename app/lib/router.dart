@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'l10n/lang.dart';
 import 'models/models.dart';
 import 'screens/account_screen.dart';
+import 'screens/assistant_screen.dart';
 import 'screens/cart_screen.dart';
 import 'screens/catalog_screens.dart';
 import 'screens/home_screen.dart';
@@ -11,7 +13,9 @@ import 'screens/login_screen.dart';
 import 'screens/order_screens.dart';
 import 'screens/payment_screen.dart';
 import 'screens/pet_screens.dart';
+import 'screens/policies_screen.dart';
 import 'screens/product_screen.dart';
+import 'screens/search_screen.dart';
 import 'screens/support_screen.dart';
 import 'state/providers.dart';
 import 'theme.dart';
@@ -52,9 +56,40 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, s) => SearchScreen(initial: s.uri.queryParameters['q'] ?? ''),
       ),
       GoRoute(
+        path: '/assistant',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, s) => AssistantScreen(initial: s.uri.queryParameters['q'] ?? ''),
+      ),
+      GoRoute(
+        path: '/policies',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, __) => const PoliciesScreen(),
+      ),
+      GoRoute(
+        path: '/policy/:key',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, s) => PolicyScreen(policyKey: s.pathParameters['key']!),
+      ),
+      GoRoute(
         path: '/offers',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, __) => const ProductListScreen(title: 'العروض', query: ProductQuery(onSale: true)),
+        builder: (context, __) => ProductListScreen(title: context.tr('العروض', 'Offers'), query: const ProductQuery(onSale: true)),
+      ),
+      GoRoute(
+        path: '/best-sellers',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, s) => ProductListScreen(
+          title: context.tr('الأكثر مبيعاً', 'Best sellers'),
+          query: ProductQuery(category: int.tryParse(s.uri.queryParameters['cat'] ?? ''), orderBy: 'popularity'),
+        ),
+      ),
+      GoRoute(
+        path: '/new',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, s) => ProductListScreen(
+          title: context.tr('وصل حديثاً', 'New arrivals'),
+          query: ProductQuery(category: int.tryParse(s.uri.queryParameters['cat'] ?? ''), orderBy: 'date'),
+        ),
       ),
       GoRoute(
         path: '/pay',
@@ -100,12 +135,12 @@ class _Shell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final count = ref.watch(cartCountProvider);
-    const tabs = [
-      (Icons.home_rounded, 'الرئيسية'),
-      (Icons.grid_view_rounded, 'الأقسام'),
-      (Icons.shopping_bag_outlined, 'السلة'),
-      (Icons.inventory_2_outlined, 'طلباتي'),
-      (Icons.person_outline_rounded, 'حسابي'),
+    final tabs = [
+      (Icons.home_rounded, context.tr('الرئيسية', 'Home')),
+      (Icons.grid_view_rounded, context.tr('الأقسام', 'Shop')),
+      (Icons.shopping_bag_outlined, context.tr('السلة', 'Cart')),
+      (Icons.inventory_2_outlined, context.tr('طلباتي', 'Orders')),
+      (Icons.person_outline_rounded, context.tr('حسابي', 'Account')),
     ];
     return Scaffold(
       extendBody: true,

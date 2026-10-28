@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../config.dart';
+import '../l10n/lang.dart';
 import '../models/models.dart';
 import '../state/providers.dart';
 import '../theme.dart';
@@ -22,12 +23,15 @@ class SupportScreen extends ConsumerWidget {
     final user = ref.watch(sessionProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('خدمة عملاء دكان'),
-        leading: const Padding(padding: EdgeInsets.all(5), child: RoundIconButton(icon: Icons.arrow_back_rounded, label: 'رجوع')),
+        title: Text(context.tr('خدمة عملاء دكان', 'Dokan support')),
+        leading: Padding(
+          padding: const EdgeInsets.all(5),
+          child: RoundIconButton(icon: Icons.arrow_back_rounded, label: context.tr('رجوع', 'Back')),
+        ),
         actions: [
           if ((config.valueOrNull?.whatsapp ?? '').isNotEmpty)
             IconButton(
-              tooltip: 'واتساب',
+              tooltip: context.tr('واتساب', 'WhatsApp'),
               icon: const Icon(Icons.chat_outlined),
               onPressed: () => _openWhatsapp(config.value!.whatsapp, orderId),
             ),
@@ -49,7 +53,9 @@ class SupportScreen extends ConsumerWidget {
 
 Future<void> _openWhatsapp(String number, int? orderId) async {
   final n = number.replaceAll(RegExp(r'[^0-9]'), '');
-  final text = orderId == null ? 'السلام عليكم' : 'السلام عليكم، عندي استفسار عن طلب رقم $orderId';
+  final text = orderId == null
+      ? AppLang.t('السلام عليكم', 'Hello')
+      : AppLang.t('السلام عليكم، عندي استفسار عن طلب رقم $orderId', 'Hello, I have a question about order #$orderId');
   await launchUrl(Uri.parse('https://wa.me/$n?text=${Uri.encodeComponent(text)}'), mode: LaunchMode.externalApplication);
 }
 
@@ -65,13 +71,13 @@ class _WhatsappFallback extends StatelessWidget {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             const CircleAvatar(radius: 40, backgroundColor: C.mint, child: Icon(Icons.support_agent_rounded, size: 40, color: C.primary)),
             const SizedBox(height: 16),
-            Text('حياك، كلمنا على واتساب', style: display(18)),
+            Text(context.tr('حياك، كلمنا على واتساب', 'Hi! Message us on WhatsApp'), style: display(18)),
             const SizedBox(height: 20),
             if (number.isNotEmpty)
               FilledButton(
                 style: FilledButton.styleFrom(minimumSize: const Size(220, 52)),
                 onPressed: () => _openWhatsapp(number, orderId),
-                child: const Text('افتح واتساب'),
+                child: Text(context.tr('افتح واتساب', 'Open WhatsApp')),
               ),
           ]),
         ),
@@ -106,12 +112,14 @@ class _ChatViewState extends State<_ChatView> {
             if (u.phone.isNotEmpty) 'phone_number': u.phone.startsWith('+') ? u.phone : '+${u.phone}',
           });
     final attrs = jsonEncode({'source': 'app', if (widget.orderId != null) 'order_id': widget.orderId});
+    final lang = AppLang.code;
+    final dir = AppLang.isAr ? 'rtl' : 'ltr';
     final html = '''
-<!doctype html><html lang="ar" dir="rtl"><head>
+<!doctype html><html lang="$lang" dir="$dir"><head>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <style>html,body{margin:0;height:100%;background:#F5F4EF}</style></head><body>
 <script>
-window.chatwootSettings = { hideMessageBubble: true, locale: 'ar', type: 'standard', launcherTitle: '' };
+window.chatwootSettings = { hideMessageBubble: true, locale: '$lang', type: 'standard', launcherTitle: '' };
 window.addEventListener('chatwoot:ready', function () {
   var u = $userJson;
   if (u) { window.\$chatwoot.setUser(u.id, u); }

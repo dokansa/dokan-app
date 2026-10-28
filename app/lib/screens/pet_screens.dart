@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../l10n/lang.dart';
 import '../models/models.dart';
 import '../state/providers.dart';
 import '../theme.dart';
@@ -35,11 +36,11 @@ class PetScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(children: [
-                  const RoundIconButton(icon: Icons.arrow_back_rounded, label: 'رجوع'),
-                  Expanded(child: Center(child: Text('حيواناتي', style: display(16)))),
+                  RoundIconButton(icon: Icons.arrow_back_rounded, label: context.tr('رجوع', 'Back')),
+                  Expanded(child: Center(child: Text(context.tr('حيواناتي', 'My pets'), style: display(16)))),
                   RoundIconButton(
                     icon: Icons.edit_outlined,
-                    label: 'تعديل الملف',
+                    label: context.tr('تعديل الملف', 'Edit profile'),
                     onTap: () => context.push('/pet-edit', extra: pet),
                   ),
                 ]),
@@ -57,11 +58,12 @@ class PetScreen extends ConsumerWidget {
                 ]),
                 const SizedBox(height: 18),
                 Row(children: [
-                  _Fact('العمر', pet.ageLabel ?? '—'),
+                  _Fact(context.tr('العمر', 'Age'), pet.ageLabel ?? '—'),
                   const SizedBox(width: 8),
-                  _Fact('الوزن', pet.weightKg == null ? '—' : '${_num(pet.weightKg!)} كجم'),
+                  _Fact(context.tr('الوزن', 'Weight'),
+                      pet.weightKg == null ? '—' : '${_num(pet.weightKg!)} ${context.tr('كجم', 'kg')}'),
                   const SizedBox(width: 8),
-                  _Fact('الأكل', foodTypes[pet.foodType] ?? '—'),
+                  _Fact(context.tr('الأكل', 'Food'), pet.foodType == null ? '—' : foodTypeLabel(pet.foodType!, context.isAr)),
                 ]),
               ],
             ),
@@ -71,7 +73,7 @@ class PetScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('مخزون ${pet.name}', style: display(17)),
+                Text(context.tr('مخزون ${pet.name}', "${pet.name}'s supplies"), style: display(17)),
                 const SizedBox(height: 10),
                 stock.when(
                   loading: () => const LoadingBox(height: 100),
@@ -81,7 +83,10 @@ class PetScreen extends ConsumerWidget {
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(R.card)),
                           child: Text(
-                            'أول ما تطلب أكل أو رمل لـ${pet.name} بنحسب لك كم يكفي ونذكرك قبل ما يخلص.',
+                            context.tr(
+                              'أول ما تطلب أكل أو رمل لـ${pet.name} بنحسب لك كم يكفي ونذكرك قبل ما يخلص.',
+                              "Once you order food or litter for ${pet.name}, we'll work out how long it lasts and remind you before it runs out.",
+                            ),
                             style: const TextStyle(color: C.muted, height: 1.6),
                           ),
                         )
@@ -90,8 +95,8 @@ class PetScreen extends ConsumerWidget {
                 const SizedBox(height: 10),
                 ToggleRow(
                   icon: Icons.notifications_none_rounded,
-                  title: 'تذكير قبل ما يخلص الأكل',
-                  subtitle: 'إشعار قبل ٥ أيام تقريباً',
+                  title: context.tr('تذكير قبل ما يخلص الأكل', 'Remind me before food runs out'),
+                  subtitle: context.tr('إشعار قبل ٥ أيام تقريباً', 'A heads-up about 5 days before'),
                   value: pet.remind,
                   onChanged: (v) => ref.read(petsProvider.notifier).setRemind(pet, v).catchError((e) {
                     if (context.mounted) showMessage(context, e, error: true);
@@ -107,7 +112,7 @@ class PetScreen extends ConsumerWidget {
                   ),
                   onPressed: () => context.push('/pet-edit'),
                   icon: const Icon(Icons.add_rounded),
-                  label: const Text('أضف حيوان ثاني', style: TextStyle(fontWeight: FontWeight.w700)),
+                  label: Text(context.tr('أضف حيوان ثاني', 'Add another pet'), style: const TextStyle(fontWeight: FontWeight.w700)),
                 ),
               ],
             ),
@@ -145,10 +150,10 @@ class _StockRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final note = item.daysLeft <= 0
-        ? 'المفروض خلص'
+        ? context.tr('المفروض خلص', 'Should be finished')
         : item.low
-            ? 'يخلص بعد ${item.daysLeft} أيام تقريباً'
-            : 'يكفي ${item.daysLeft} يوم تقريباً';
+            ? context.tr('يخلص بعد ${item.daysLeft} أيام تقريباً', 'Runs out in about ${item.daysLeft} days')
+            : context.tr('يكفي ${item.daysLeft} يوم تقريباً', 'Lasts about ${item.daysLeft} days');
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
@@ -166,7 +171,7 @@ class _StockRow extends StatelessWidget {
           TextButton(
             style: TextButton.styleFrom(backgroundColor: C.ground, foregroundColor: C.primary, minimumSize: const Size(64, 44)),
             onPressed: () => context.push('/product/${item.productId}'),
-            child: const Text('اطلبه', style: TextStyle(fontWeight: FontWeight.w700)),
+            child: Text(context.tr('اطلبه', 'Order'), style: const TextStyle(fontWeight: FontWeight.w700)),
           ),
         ]),
         const SizedBox(height: 10),
@@ -242,10 +247,10 @@ class _PetEditScreenState extends ConsumerState<PetEditScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('تحذف ملف ${widget.pet!.name}؟'),
+        title: Text(ctx.tr('تحذف ملف ${widget.pet!.name}؟', "Delete ${widget.pet!.name}'s profile?")),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('لا')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('احذف')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(ctx.tr('لا', 'No'))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(ctx.tr('احذف', 'Delete'))),
         ],
       ),
     );
@@ -263,11 +268,16 @@ class _PetEditScreenState extends ConsumerState<PetEditScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.pet == null ? 'حيوان جديد' : 'تعديل ${widget.pet!.name}'),
-        leading: const Padding(padding: EdgeInsets.all(5), child: RoundIconButton(icon: Icons.arrow_back_rounded, label: 'رجوع')),
+        title: Text(widget.pet == null
+            ? context.tr('حيوان جديد', 'New pet')
+            : context.tr('تعديل ${widget.pet!.name}', 'Edit ${widget.pet!.name}')),
+        leading: Padding(
+          padding: const EdgeInsets.all(5),
+          child: RoundIconButton(icon: Icons.arrow_back_rounded, label: context.tr('رجوع', 'Back')),
+        ),
         actions: [
           if (widget.pet != null)
-            IconButton(tooltip: 'حذف', onPressed: _delete, icon: const Icon(Icons.delete_outline_rounded)),
+            IconButton(tooltip: context.tr('حذف', 'Delete'), onPressed: _delete, icon: const Icon(Icons.delete_outline_rounded)),
         ],
       ),
       body: Form(
@@ -275,19 +285,19 @@ class _PetEditScreenState extends ConsumerState<PetEditScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
           children: [
-            const Text('نوعه', style: TextStyle(fontWeight: FontWeight.w600)),
+            Text(context.tr('نوعه', 'Type'), style: const TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final e in petKinds.entries)
+              for (final k in petKindKeys)
                 ChoiceChip(
-                  label: Text(e.value),
-                  selected: _kind == e.key,
-                  onSelected: (_) => setState(() => _kind = e.key),
+                  label: Text(petKindLabel(k, context.isAr)),
+                  selected: _kind == k,
+                  onSelected: (_) => setState(() => _kind = k),
                   showCheckmark: false,
                   selectedColor: C.ink,
                   backgroundColor: C.surface,
                   side: BorderSide.none,
-                  labelStyle: TextStyle(color: _kind == e.key ? Colors.white : C.ink, fontWeight: FontWeight.w700),
+                  labelStyle: TextStyle(color: _kind == k ? Colors.white : C.ink, fontWeight: FontWeight.w700),
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
@@ -295,18 +305,18 @@ class _PetEditScreenState extends ConsumerState<PetEditScreen> {
             const SizedBox(height: 16),
             TextFormField(
               controller: _name,
-              validator: (v) => v == null || v.trim().isEmpty ? 'اكتب اسمه' : null,
-              decoration: const InputDecoration(labelText: 'اسمه'),
+              validator: (v) => v == null || v.trim().isEmpty ? context.tr('اكتب اسمه', 'Enter a name') : null,
+              decoration: InputDecoration(labelText: context.tr('اسمه', 'Name')),
             ),
             const SizedBox(height: 10),
-            TextFormField(controller: _breed, decoration: const InputDecoration(labelText: 'السلالة (اختياري)')),
+            TextFormField(controller: _breed, decoration: InputDecoration(labelText: context.tr('السلالة (اختياري)', 'Breed (optional)'))),
             const SizedBox(height: 10),
             Row(children: [
               Expanded(
                 child: TextFormField(
                   controller: _weight,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'الوزن بالكيلو (اختياري)'),
+                  decoration: InputDecoration(labelText: context.tr('الوزن بالكيلو (اختياري)', 'Weight in kg (optional)')),
                 ),
               ),
               const SizedBox(width: 10),
@@ -323,14 +333,14 @@ class _PetEditScreenState extends ConsumerState<PetEditScreen> {
                         initialDate: _birth ?? DateTime(now.year - 1, now.month),
                         firstDate: DateTime(now.year - 30),
                         lastDate: now,
-                        helpText: 'تاريخ الميلاد التقريبي',
+                        helpText: context.tr('تاريخ الميلاد التقريبي', 'Approximate birth date'),
                       );
                       if (d != null) setState(() => _birth = d);
                     },
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                       child: Text(
-                        _birth == null ? 'تاريخ الميلاد' : '${_birth!.year}/${_birth!.month}/${_birth!.day}',
+                        _birth == null ? context.tr('تاريخ الميلاد', 'Birth date') : '${_birth!.year}/${_birth!.month}/${_birth!.day}',
                         style: TextStyle(color: _birth == null ? C.muted : C.ink, fontSize: 15),
                       ),
                     ),
@@ -339,10 +349,12 @@ class _PetEditScreenState extends ConsumerState<PetEditScreen> {
               ),
             ]),
             const SizedBox(height: 16),
-            const Text('نوع الأكل', style: TextStyle(fontWeight: FontWeight.w600)),
+            Text(context.tr('نوع الأكل', 'Food type'), style: const TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             SegmentedButton<String>(
-              segments: [for (final e in foodTypes.entries) ButtonSegment(value: e.key, label: Text(e.value))],
+              segments: [
+                for (final k in foodTypeKeys) ButtonSegment(value: k, label: Text(foodTypeLabel(k, context.isAr)))
+              ],
               selected: {if (_food != null) _food!},
               emptySelectionAllowed: true,
               showSelectedIcon: false,
@@ -353,7 +365,7 @@ class _PetEditScreenState extends ConsumerState<PetEditScreen> {
               onPressed: _saving ? null : _save,
               child: _saving
                   ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
-                  : const Text('احفظ'),
+                  : Text(context.tr('احفظ', 'Save')),
             ),
           ],
         ),
