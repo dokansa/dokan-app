@@ -12,6 +12,10 @@ on:
         default: "https://staging.dokansa.com"
         required: true
 
+permissions:
+  contents: write
+  checks: write
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -47,17 +51,38 @@ jobs:
       - run: flutter pub get
 
       - name: App icon
-        run: dart run flutter_launcher_icons
+        continue-on-error: true
+        run: dart run flutter_launcher_icons -f flutter_launcher_icons_android.yaml 2>&1 | tee icons.log; test ${PIPESTATUS[0]} -eq 0 || { tail -n 15 icons.log | sed 's/^/::error title=icons::/'; exit 1; }
 
+      # Problems are reported as annotations so they can be read through the API.
       - name: Analyze
         continue-on-error: true
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+        run: |
+          flutter analyze --no-fatal-infos --no-fatal-warnings --format=machine > analyze.txt 2>&1 || true
+          grep '^ERROR|' analyze.txt | head -40 | awk -F'|' '{printf "::error file=app/%s,line=%s,col=%s,title=%s::%s\n", $4, $5, $6, $3, $8}' | sed "s#app/$PWD/#app/#"
+          ! grep -q '^ERROR|' analyze.txt
 
       - name: Build APK
-        run: flutter build apk --release --dart-define=STORE_URL=$STORE_URL
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter build apk --release --dart-define=STORE_URL=$STORE_URL 2>&1 | tee build.log || {
+            grep -E "error|Error|FAILURE|What went wrong|Exception" build.log | head -40 | sed 's/^/::error title=build::/'
+            exit 1
+          }
 
       - uses: actions/upload-artifact@v4
         with:
           name: dokan-app-android
           path: app/build/app/outputs/flutter-apk/app-release.apk
           retention-days: 14
+
+      # Also publish the APK on a fixed "test" release page, easy to open from the phone.
+      - name: Publish to the test release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk dokan-test.apk
+          gh release view test >/dev/null 2>&1 || gh release create test --prerelease --title "نسخة تجريبية" --notes "آخر نسخة تجريبية من تطبيق دكان (أندرويد)."
+          gh release upload test dokan-test.apk --clobber
+          gh release edit test --notes "آخر نسخة تجريبية من تطبيق دكان (أندرويد) — متصلة بـ $STORE_URL — بُنيت من ${GITHUB_SHA::7}"
