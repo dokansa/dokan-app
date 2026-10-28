@@ -1,0 +1,203 @@
+<?php
+/**
+ * WooCommerce Store API integration: nonce bypass for app-token requests,
+ * cart extension update callback (payment method), checkout extension schema (pet_id)
+ * and app order tagging.
+ *
+ * @package Dokan_App_API
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+class Dokan_App_Store_API {
+
+	const NS = 'dokan-app';
+
+	/**
+	 * Hooks.
+	 */
+	public static function init() {
+		add_filter( 'woocommerce_store_api_disable_nonce_check', array( __CLASS__, 'maybe_disable_nonce' ), 10, 1 );
+		add_action( 'woocommerce_blocks_loaded', array( __CLASS__, 'register_extensions' ) );
+		add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( __CLASS__, 'tag_order_from_request' ), 10, 2 );
+		add_action( 'woocommerce_store_api_checkout_order_processed', array( __CLASS__, 'order_processed' ), 10, 1 );
+		// Expose Store API headers to the app (and allow our custom request headers in CORS preflight).
+		add_filter( 'rest_allowed_cors_headers', array( __CLASS__, 'cors_headers' ) );
+	}
+
+	/**
+	 * Allow our headers through CORS (harmless for native apps; helps web debug builds).
+	 *
+	 * @param array $headers Headers.
+	 * @return array
+	 */
+	public static function cors_headers( $headers ) {
+		$headers[] = 'X-Dokan-App';
+		$headers[] = 'X-Dokan-App-Token';
+		$headers[] = 'X-Dokan-App-Platform';
+		$headers[] = 'Cart-Token';
+		$headers[] = 'Nonce';
+		return array_values( array_unique( $headers ) );
+	}
+
+	/**
+	 * Skip Store API nonce only for app requests authenticated by our token.
+	 *
+	 * @param bool $disable Current value.
+	 * @return bool
+	 */
+	public static function maybe_disable_nonce( $disable ) {
+		if ( $disable ) {
+			return $disable;
+		}
+		if ( Dokan_App_Helpers::is_app_request() && Dokan_App_Auth::is_token_authenticated() ) {
+			return true;
+		}
+		return $disable;
+	}
+
+	/**
+	 * Register update callback + checkout schema.
+	 */
+	public static function register_extensions() {
+		try {
+			if ( function_exists( 'woocommerce_store_api_register_update_callback' ) ) {
+				woocommerce_store_api_register_update_callback(
+					array(
+						'namespace' => self::NS,
+						'callback'  => array( __CLASS__, 'update_callback' ),
+					)
+				);
+			}
+			if ( function_exists( 'woocommerce_store_api_register_endpoint_data' ) && class_exists( '\Automattic\WooCommerce\StoreApi\Schemas\V1\CheckoutSchema' ) ) {
+				woocommerce_store_api_register_endpoint_data(
+					array(
+						'endpoint'        => \Automattic\WooCommerce\StoreApi\Schemas\V1\CheckoutSchema::IDENTIFIER,
+						'namespace'       => self::NS,
+						'schema_callback' => array( __CLASS__, 'checkout_schema' ),
+						'schema_type'     => ARRAY_A,
+					)
+				);
+			}
+		} catch ( \Throwable $e ) {
+			Dokan_App_Helpers::log( 'Store API extension registration failed: ' . $e->getMessage() );
+		}
+	}
+
+	/**
+	 * Checkout extension schema.
+	 *
+	 * @return array
+	 */
+	public static function checkout_schema() {
+		return array(
+			'pet_id' => array(
+				'description' => 'Pet id this order is for',
+				'type'        => array( 'string', 'null' ),
+				'context'     => array( 'view', 'edit' ),
+				'readonly'    => false,
+				'optional'    => true,
+				'arg_options' => array(
+					'sanitize_callback' => function ( $v ) {
+						return null === $v ? null : Dokan_App_Pets::clean_id( $v );
+					},
+				),
+			),
+		);
+	}
+
+	/**
+	 * POST /cart/extensions {namespace:"dokan-app", data:{payment_method}}.
+	 *
+	 * @param array $data Data.
+	 */
+	public static function update_callback( $data ) {
+		if ( ! is_array( $data ) || ! isset( $data['payment_method'] ) || ! function_exists( 'WC' ) || ! WC()->session ) {
+			return;
+		}
+		$id = sanitize_text_field( (string) $data['payment_method'] );
+		if ( '' === $id ) {
+			WC()->session->set( 'chosen_payment_method', '' );
+			return;
+		}
+		$gateways = array();
+		try {
+			$gateways = WC()->payment_gateways()->get_available_payment_gateways();
+		} catch ( \Throwable $e ) {
+			$gateways = WC()->payment_gateways()->payment_gateways();
+		}
+		if ( ! isset( $gateways[ $id ] ) ) {
+			return;
+		}
+		WC()->session->set( 'chosen_payment_method', $id );
+		// Some fee plugins also read the POST var during calculate_totals.
+		$_POST['payment_method'] = $id; // phpcs:ignore WordPress.Security.NonceVerification
+		do_action( 'dokan_app_payment_method_chosen', $id );
+		// The /cart/extensions route recalculates totals after this callback returns.
+	}
+
+	/**
+	 * Tag orders placed from the app.
+	 *
+	 * @param WC_Order        $order   Order.
+	 * @param WP_REST_Request $request Request.
+	 */
+	public static function tag_order_from_request( $order, $request ) {
+		try {
+			if ( ! $order instanceof WC_Order || ! Dokan_App_Helpers::is_app_request() ) {
+				return;
+			}
+			$platform = Dokan_App_Helpers::app_platform();
+			$order->set_created_via( 'dokan-app' );
+			$order->update_meta_data( '_dokan_app_order', 1 );
+			$order->update_meta_data( '_dokan_app_platform', $platform );
+
+			$ext    = $request instanceof WP_REST_Request ? $request->get_param( 'extensions' ) : null;
+			$pet_id = '';
+			if ( is_array( $ext ) && isset( $ext[ self::NS ] ) && is_array( $ext[ self::NS ] ) && ! empty( $ext[ self::NS ]['pet_id'] ) ) {
+				$pet_id = Dokan_App_Pets::clean_id( $ext[ self::NS ]['pet_id'] );
+			}
+			$uid = (int) $order->get_customer_id();
+			if ( '' !== $pet_id && $uid > 0 && null !== Dokan_App_Pets::get( $uid, $pet_id ) ) {
+				$order->update_meta_data( '_dokan_app_pet_id', $pet_id );
+			} else {
+				$order->delete_meta_data( '_dokan_app_pet_id' );
+			}
+			$order->save();
+		} catch ( \Throwable $e ) {
+			Dokan_App_Helpers::log( 'tag order error: ' . $e->getMessage() );
+		}
+	}
+
+	/**
+	 * After checkout processed: make sure tagging stuck and add the note once.
+	 *
+	 * @param WC_Order $order Order.
+	 */
+	public static function order_processed( $order ) {
+		try {
+			if ( ! $order instanceof WC_Order || ! Dokan_App_Helpers::is_app_request() ) {
+				return;
+			}
+			$platform = (string) $order->get_meta( '_dokan_app_platform' );
+			if ( '' === $platform ) {
+				$platform = Dokan_App_Helpers::app_platform();
+				$order->update_meta_data( '_dokan_app_platform', $platform );
+			}
+			if ( 'dokan-app' !== $order->get_created_via() ) {
+				$order->set_created_via( 'dokan-app' );
+			}
+			$order->update_meta_data( '_dokan_app_order', 1 );
+			if ( ! $order->get_meta( '_dokan_app_noted' ) ) {
+				$label = 'ios' === $platform ? 'iOS' : ( 'android' === $platform ? 'Android' : 'iOS/Android' );
+				$order->add_order_note( 'طلب من التطبيق (' . $label . ')' );
+				$order->update_meta_data( '_dokan_app_noted', 1 );
+			}
+			$order->save();
+		} catch ( \Throwable $e ) {
+			Dokan_App_Helpers::log( 'order processed tag error: ' . $e->getMessage() );
+		}
+	}
+}

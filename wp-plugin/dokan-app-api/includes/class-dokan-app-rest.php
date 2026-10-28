@@ -1,0 +1,965 @@
+<?php
+/**
+ * REST routes: /wp-json/dokan-app/v1/...
+ *
+ * @package Dokan_App_API
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+class Dokan_App_REST {
+
+	/**
+	 * Hooks.
+	 */
+	public static function init() {
+		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
+	}
+
+	/**
+	 * Woo available?
+	 *
+	 * @return bool
+	 */
+	private static function woo() {
+		return class_exists( 'WooCommerce' ) && function_exists( 'wc_get_order' );
+	}
+
+	/**
+	 * Public permission (still requires Woo).
+	 *
+	 * @return true|WP_Error
+	 */
+	public static function permission_public() {
+		if ( ! self::woo() ) {
+			return Dokan_App_Helpers::error( 'dokan_app_unavailable', 'الخدمة غير متاحة حاليًا.', 503 );
+		}
+		return true;
+	}
+
+	/**
+	 * Auth permission.
+	 *
+	 * @return true|WP_Error
+	 */
+	public static function permission_user() {
+		$p = self::permission_public();
+		if ( true !== $p ) {
+			return $p;
+		}
+		return Dokan_App_Auth::permission_user();
+	}
+
+	/**
+	 * Register routes.
+	 */
+	public static function register_routes() {
+		$ns   = DOKAN_APP_NS;
+		$pub  = array( __CLASS__, 'permission_public' );
+		$auth = array( __CLASS__, 'permission_user' );
+
+		register_rest_route(
+			$ns,
+			'/config',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'config' ),
+				'permission_callback' => $pub,
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/auth/otp/request',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'otp_request' ),
+				'permission_callback' => $pub,
+				'args'                => array(
+					'phone' => array(
+						'required'          => true,
+						'type'              => 'string',
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+				),
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/auth/otp/verify',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'otp_verify' ),
+				'permission_callback' => $pub,
+				'args'                => array(
+					'phone' => array(
+						'required'          => true,
+						'type'              => 'string',
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+					'code'  => array(
+						'required'          => true,
+						'type'              => 'string',
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+					'name'  => array(
+						'type'              => 'string',
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+				),
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/auth/login',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'login' ),
+				'permission_callback' => $pub,
+				'args'                => array(
+					'username' => array(
+						'required' => true,
+						'type'     => 'string',
+					),
+					'password' => array(
+						'required' => true,
+						'type'     => 'string',
+					),
+				),
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/auth/logout',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'logout' ),
+				'permission_callback' => $auth,
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/me',
+			array(
+				array(
+					'methods'             => WP_REST_Server::READABLE,
+					'callback'            => array( __CLASS__, 'me' ),
+					'permission_callback' => $auth,
+				),
+				array(
+					'methods'             => 'PATCH, PUT, POST',
+					'callback'            => array( __CLASS__, 'me_update' ),
+					'permission_callback' => $auth,
+				),
+				array(
+					'methods'             => WP_REST_Server::DELETABLE,
+					'callback'            => array( __CLASS__, 'me_delete' ),
+					'permission_callback' => $auth,
+				),
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/pets',
+			array(
+				array(
+					'methods'             => WP_REST_Server::READABLE,
+					'callback'            => array( __CLASS__, 'pets_list' ),
+					'permission_callback' => $auth,
+				),
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( __CLASS__, 'pets_create' ),
+					'permission_callback' => $auth,
+				),
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/pets/(?P<id>[a-zA-Z0-9]{1,36})',
+			array(
+				array(
+					'methods'             => 'PATCH, PUT, POST',
+					'callback'            => array( __CLASS__, 'pets_update' ),
+					'permission_callback' => $auth,
+				),
+				array(
+					'methods'             => WP_REST_Server::DELETABLE,
+					'callback'            => array( __CLASS__, 'pets_delete' ),
+					'permission_callback' => $auth,
+				),
+				array(
+					'methods'             => WP_REST_Server::READABLE,
+					'callback'            => array( __CLASS__, 'pets_get' ),
+					'permission_callback' => $auth,
+				),
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/pets/(?P<id>[a-zA-Z0-9]{1,36})/stock',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'pets_stock' ),
+				'permission_callback' => $auth,
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/devices',
+			array(
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( __CLASS__, 'devices_add' ),
+					'permission_callback' => $auth,
+				),
+				array(
+					'methods'             => WP_REST_Server::DELETABLE,
+					'callback'            => array( __CLASS__, 'devices_remove' ),
+					'permission_callback' => $auth,
+				),
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/orders',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'orders_list' ),
+				'permission_callback' => $auth,
+				'args'                => array(
+					'page' => array(
+						'type'              => 'integer',
+						'default'           => 1,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/orders/(?P<id>\d+)',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'orders_get' ),
+				'permission_callback' => $auth,
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/orders/(?P<id>\d+)/reorder',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'orders_reorder' ),
+				'permission_callback' => $auth,
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/orders/(?P<id>\d+)/cancel-request',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'orders_cancel' ),
+				'permission_callback' => $auth,
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/recommendations',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'recommendations' ),
+				'permission_callback' => $auth,
+				'args'                => array(
+					'pet_id' => array(
+						'type'              => 'string',
+						'sanitize_callback' => array( 'Dokan_App_Pets', 'clean_id' ),
+					),
+				),
+			)
+		);
+	}
+
+	/**
+	 * Wrap a callback in a catch-all so internal errors never leak details.
+	 *
+	 * @param callable $fn Callable.
+	 * @return mixed
+	 */
+	private static function safe( $fn ) {
+		try {
+			$res = call_user_func( $fn );
+			if ( is_wp_error( $res ) ) {
+				return $res;
+			}
+			return rest_ensure_response( $res );
+		} catch ( \Throwable $e ) {
+			Dokan_App_Helpers::log( 'REST error: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine() );
+			return Dokan_App_Helpers::error( 'dokan_app_server_error', 'حدث خطأ غير متوقع، يرجى المحاولة لاحقًا.', 500 );
+		}
+	}
+
+	/**
+	 * JSON body as array.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return array
+	 */
+	private static function body( $request ) {
+		$b = $request->get_json_params();
+		if ( ! is_array( $b ) || empty( $b ) ) {
+			$b = $request->get_body_params();
+		}
+		return is_array( $b ) ? $b : array();
+	}
+
+	/* ------------------------------------------------------------------
+	 * Config
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * GET /config.
+	 *
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function config() {
+		return self::safe(
+			function () {
+				$cached = get_transient( 'dokan_app_config_cache_' . DOKAN_APP_VERSION );
+				if ( ! is_array( $cached ) ) {
+					$cached = array(
+						'categories' => self::config_categories(),
+					);
+					set_transient( 'dokan_app_config_cache_' . DOKAN_APP_VERSION, $cached, 10 * MINUTE_IN_SECONDS );
+				}
+
+				$banners = array();
+				foreach ( (array) Dokan_App_Helpers::setting( 'banners' ) as $b ) {
+					if ( ! empty( $b['image'] ) ) {
+						$banners[] = array(
+							'image' => esc_url_raw( $b['image'] ),
+							'title' => isset( $b['title'] ) ? (string) $b['title'] : '',
+							'link'  => isset( $b['link'] ) ? (string) $b['link'] : '',
+						);
+					}
+				}
+
+				$out = array(
+					'store_name'           => wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ),
+					'currency'             => function_exists( 'get_woocommerce_currency' ) ? get_woocommerce_currency() : 'SAR',
+					'riyadh_cutoff'        => (string) Dokan_App_Helpers::setting( 'riyadh_cutoff' ),
+					'delivery_note_riyadh' => (string) Dokan_App_Helpers::setting( 'delivery_note_riyadh' ),
+					'delivery_note_ksa'    => (string) Dokan_App_Helpers::setting( 'delivery_note_ksa' ),
+					'whatsapp'             => (string) Dokan_App_Helpers::setting( 'whatsapp' ),
+					'chatwoot'             => array(
+						'base_url'      => untrailingslashit( (string) Dokan_App_Helpers::setting( 'chatwoot_base_url' ) ),
+						'website_token' => (string) Dokan_App_Helpers::setting( 'chatwoot_token' ),
+					),
+					'payment_methods'      => self::config_payment_methods(),
+					'categories'           => $cached['categories'],
+					'banners'              => $banners,
+					'min_app_version'      => array(
+						'ios'     => (string) Dokan_App_Helpers::setting( 'min_ios' ),
+						'android' => (string) Dokan_App_Helpers::setting( 'min_android' ),
+					),
+				);
+				$res = rest_ensure_response( apply_filters( 'dokan_app_config', $out ) );
+				$res->header( 'Cache-Control', 'public, max-age=300' );
+				return $res;
+			}
+		);
+	}
+
+	/**
+	 * Payment methods.
+	 *
+	 * @return array
+	 */
+	private static function config_payment_methods() {
+		$out = array();
+		if ( ! function_exists( 'WC' ) || ! WC()->payment_gateways() ) {
+			return $out;
+		}
+		// All enabled gateways. Which ones apply to a given order (amount, address) is decided
+		// by the Store API cart's own payment_methods, so is_available() is not used here:
+		// with no cart in this request, gateways like MyFatoorah/Tabby/Tamara report unavailable.
+		$gateways = array();
+		try {
+			foreach ( WC()->payment_gateways()->payment_gateways() as $id => $g ) {
+				if ( 'yes' === $g->enabled ) {
+					$gateways[ $id ] = $g;
+				}
+			}
+		} catch ( \Throwable $e ) {
+			$gateways = array();
+		}
+		foreach ( $gateways as $id => $g ) {
+			$out[] = array(
+				'id'          => (string) $id,
+				'title'       => wp_strip_all_tags( (string) $g->get_title() ),
+				'description' => trim( wp_strip_all_tags( (string) $g->get_description() ) ),
+			);
+		}
+		return $out;
+	}
+
+	/**
+	 * Top-level categories.
+	 *
+	 * @return array
+	 */
+	private static function config_categories() {
+		$args = array(
+			'taxonomy'   => 'product_cat',
+			'parent'     => 0,
+			'hide_empty' => true,
+			'orderby'    => 'count',
+			'order'      => 'DESC',
+		);
+		// The store runs Polylang (Arabic + English copies): the app shows the Arabic ones.
+		if ( function_exists( 'pll_languages_list' ) ) {
+			$args['lang'] = apply_filters( 'dokan_app_language', 'ar' );
+		}
+		$terms = get_terms( $args );
+		$out   = array();
+		if ( is_wp_error( $terms ) ) {
+			return $out;
+		}
+		$default = (int) get_option( 'default_product_cat', 0 );
+		$skip    = array( 'uncategorized', 'غير مصنف', 'بدون تصنيف' );
+		foreach ( $terms as $t ) {
+			$slug = urldecode( $t->slug );
+			if ( (int) $t->term_id === $default || 0 === strpos( $slug, 'uncategorized' )
+				|| in_array( strtolower( trim( $t->name ) ), $skip, true ) || in_array( $slug, $skip, true ) ) {
+				continue;
+			}
+			if ( function_exists( 'pll_get_term_language' ) && isset( $args['lang'] ) ) {
+				$lang = pll_get_term_language( $t->term_id );
+				if ( $lang && $lang !== $args['lang'] ) {
+					continue;
+				}
+			}
+			$thumb = (int) get_term_meta( $t->term_id, 'thumbnail_id', true );
+			$img   = $thumb ? wp_get_attachment_image_url( $thumb, 'woocommerce_thumbnail' ) : '';
+			$out[] = array(
+				'id'    => (int) $t->term_id,
+				'name'  => wp_specialchars_decode( $t->name, ENT_QUOTES ),
+				'slug'  => urldecode( $t->slug ),
+				'image' => $img ? $img : null,
+				'count' => (int) $t->count,
+			);
+		}
+		usort(
+			$out,
+			function ( $a, $b ) {
+				return $b['count'] - $a['count'];
+			}
+		);
+		return $out;
+	}
+
+	/* ------------------------------------------------------------------
+	 * Auth
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * POST /auth/otp/request.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function otp_request( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				return Dokan_App_OTP::request( (string) $request->get_param( 'phone' ) );
+			}
+		);
+	}
+
+	/**
+	 * POST /auth/otp/verify.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function otp_verify( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				return Dokan_App_OTP::verify(
+					(string) $request->get_param( 'phone' ),
+					(string) $request->get_param( 'code' ),
+					(string) $request->get_param( 'name' )
+				);
+			}
+		);
+	}
+
+	/**
+	 * POST /auth/login.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function login( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$username = trim( sanitize_text_field( (string) $request->get_param( 'username' ) ) );
+				$password = (string) $request->get_param( 'password' );
+				if ( '' === $username || '' === $password ) {
+					return Dokan_App_Helpers::error( 'dokan_app_login_missing', 'يرجى إدخال اسم المستخدم وكلمة المرور.', 400 );
+				}
+
+				// Simple brute-force protection: 10 failures / 15 min per IP.
+				$rl_key = 'dokan_app_login_' . md5( Dokan_App_Helpers::client_ip() );
+				$fails  = (int) get_transient( $rl_key );
+				if ( $fails >= 10 ) {
+					return Dokan_App_Helpers::error( 'dokan_app_rate_limited', 'محاولات كثيرة. حاول مرة أخرى بعد قليل.', 429 );
+				}
+
+				// Allow login by phone number too.
+				$norm = Dokan_App_Helpers::normalize_phone( $username );
+				if ( '' !== $norm && ! is_email( $username ) ) {
+					$uid = Dokan_App_OTP::find_user_by_phone( $norm );
+					if ( $uid ) {
+						$u = get_userdata( $uid );
+						if ( $u ) {
+							$username = $u->user_login;
+						}
+					}
+				}
+
+				$user = wp_authenticate( $username, $password );
+				if ( is_wp_error( $user ) ) {
+					set_transient( $rl_key, $fails + 1, 15 * MINUTE_IN_SECONDS );
+					return Dokan_App_Helpers::error( 'dokan_app_login_failed', 'بيانات الدخول غير صحيحة.', 401 );
+				}
+				if ( ! Dokan_App_Auth::user_allowed( $user->ID ) ) {
+					return Dokan_App_Helpers::error( 'dokan_app_forbidden_account', 'لا يمكن تسجيل الدخول بهذا الحساب عبر التطبيق.', 403 );
+				}
+				$token = Dokan_App_Auth::issue_token( $user->ID );
+				if ( is_wp_error( $token ) ) {
+					return $token;
+				}
+				delete_transient( $rl_key );
+				return array(
+					'token' => $token,
+					'user'  => Dokan_App_Helpers::user_shape( $user ),
+				);
+			}
+		);
+	}
+
+	/**
+	 * POST /auth/logout.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function logout( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$uid  = get_current_user_id();
+				$body = self::body( $request );
+				if ( ! empty( $body['device_token'] ) && is_string( $body['device_token'] ) ) {
+					Dokan_App_Push::remove_device( $uid, sanitize_text_field( $body['device_token'] ) );
+				}
+				Dokan_App_Auth::bump_version( $uid );
+				return array( 'ok' => true );
+			}
+		);
+	}
+
+	/* ------------------------------------------------------------------
+	 * Me
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * GET /me.
+	 *
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function me() {
+		return self::safe(
+			function () {
+				return Dokan_App_Helpers::user_shape( get_current_user_id() );
+			}
+		);
+	}
+
+	/**
+	 * PATCH /me.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function me_update( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$uid    = get_current_user_id();
+				$body   = self::body( $request );
+				$update = array( 'ID' => $uid );
+				$len    = function ( $s ) {
+					return function_exists( 'mb_substr' ) ? mb_substr( $s, 0, 60 ) : substr( $s, 0, 120 );
+				};
+				if ( array_key_exists( 'first_name', $body ) && is_scalar( $body['first_name'] ) ) {
+					$update['first_name'] = $len( trim( sanitize_text_field( (string) $body['first_name'] ) ) );
+					update_user_meta( $uid, 'billing_first_name', $update['first_name'] );
+				}
+				if ( array_key_exists( 'last_name', $body ) && is_scalar( $body['last_name'] ) ) {
+					$update['last_name'] = $len( trim( sanitize_text_field( (string) $body['last_name'] ) ) );
+					update_user_meta( $uid, 'billing_last_name', $update['last_name'] );
+				}
+				if ( array_key_exists( 'email', $body ) && is_scalar( $body['email'] ) ) {
+					$email = sanitize_email( (string) $body['email'] );
+					if ( '' === $email || ! is_email( $email ) ) {
+						return Dokan_App_Helpers::error( 'dokan_app_invalid_email', 'البريد الإلكتروني غير صحيح.', 400 );
+					}
+					$other = email_exists( $email );
+					if ( $other && (int) $other !== $uid ) {
+						return Dokan_App_Helpers::error( 'dokan_app_email_taken', 'البريد الإلكتروني مستخدم في حساب آخر.', 409 );
+					}
+					$update['user_email'] = $email;
+					update_user_meta( $uid, 'billing_email', $email );
+				}
+				if ( isset( $update['first_name'] ) || isset( $update['last_name'] ) ) {
+					$first = isset( $update['first_name'] ) ? $update['first_name'] : (string) get_user_meta( $uid, 'first_name', true );
+					$last  = isset( $update['last_name'] ) ? $update['last_name'] : (string) get_user_meta( $uid, 'last_name', true );
+					$dn    = trim( $first . ' ' . $last );
+					if ( '' !== $dn ) {
+						$update['display_name'] = $dn;
+					}
+				}
+				if ( count( $update ) > 1 ) {
+					// Avoid the "email changed" notification to placeholder addresses.
+					add_filter( 'send_email_change_email', '__return_false' );
+					$r = wp_update_user( $update );
+					remove_filter( 'send_email_change_email', '__return_false' );
+					if ( is_wp_error( $r ) ) {
+						return Dokan_App_Helpers::error( 'dokan_app_update_failed', 'تعذر تحديث البيانات.', 400 );
+					}
+				}
+				return Dokan_App_Helpers::user_shape( $uid );
+			}
+		);
+	}
+
+	/**
+	 * DELETE /me — deletion request.
+	 *
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function me_delete() {
+		return self::safe(
+			function () {
+				$uid = get_current_user_id();
+				update_user_meta( $uid, '_dokan_app_deletion_requested', time() );
+				delete_user_meta( $uid, Dokan_App_Push::META_DEVICES );
+				Dokan_App_Auth::bump_version( $uid );
+
+				$admin   = get_option( 'admin_email' );
+				$link    = admin_url( 'user-edit.php?user_id=' . $uid );
+				$subject = '[' . wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ) . '] طلب حذف حساب من التطبيق';
+				$message = "طلب عميل حذف حسابه من خلال تطبيق دكان.\n\nرقم المستخدم: {$uid}\nرابط الحساب: {$link}\n\nتم إيقاف دخول الحساب عبر التطبيق. يرجى مراجعة الطلب وحذف البيانات حسب سياسة المتجر.";
+				if ( $admin ) {
+					wp_mail( $admin, $subject, $message );
+				}
+				do_action( 'dokan_app_account_deletion_requested', $uid );
+				return array( 'ok' => true );
+			}
+		);
+	}
+
+	/* ------------------------------------------------------------------
+	 * Pets
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * GET /pets.
+	 *
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function pets_list() {
+		return self::safe(
+			function () {
+				return Dokan_App_Pets::list_shapes( get_current_user_id() );
+			}
+		);
+	}
+
+	/**
+	 * GET /pets/<id>.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function pets_get( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$pet = Dokan_App_Pets::get( get_current_user_id(), Dokan_App_Pets::clean_id( $request['id'] ) );
+				return $pet ? $pet : Dokan_App_Helpers::error( 'dokan_app_pet_not_found', 'الحيوان الأليف غير موجود.', 404 );
+			}
+		);
+	}
+
+	/**
+	 * POST /pets.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function pets_create( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$r = Dokan_App_Pets::create( get_current_user_id(), self::body( $request ) );
+				if ( is_wp_error( $r ) ) {
+					return $r;
+				}
+				$res = rest_ensure_response( $r );
+				$res->set_status( 201 );
+				return $res;
+			}
+		);
+	}
+
+	/**
+	 * PATCH /pets/<id>.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function pets_update( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				return Dokan_App_Pets::update( get_current_user_id(), Dokan_App_Pets::clean_id( $request['id'] ), self::body( $request ) );
+			}
+		);
+	}
+
+	/**
+	 * DELETE /pets/<id>.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function pets_delete( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$r = Dokan_App_Pets::delete( get_current_user_id(), Dokan_App_Pets::clean_id( $request['id'] ) );
+				return is_wp_error( $r ) ? $r : array( 'ok' => true );
+			}
+		);
+	}
+
+	/**
+	 * GET /pets/<id>/stock.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function pets_stock( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$uid = get_current_user_id();
+				$pet = Dokan_App_Pets::get( $uid, Dokan_App_Pets::clean_id( $request['id'] ) );
+				if ( ! $pet ) {
+					return Dokan_App_Helpers::error( 'dokan_app_pet_not_found', 'الحيوان الأليف غير موجود.', 404 );
+				}
+				return Dokan_App_Orders::stock_for_pet( $uid, $pet );
+			}
+		);
+	}
+
+	/* ------------------------------------------------------------------
+	 * Devices
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * Clean an FCM token.
+	 *
+	 * @param mixed $t Raw.
+	 * @return string
+	 */
+	private static function clean_fcm_token( $t ) {
+		if ( ! is_string( $t ) ) {
+			return '';
+		}
+		$t = trim( $t );
+		return preg_match( '/^[A-Za-z0-9_:\-\.]{20,4096}$/', $t ) ? $t : '';
+	}
+
+	/**
+	 * POST /devices.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function devices_add( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$body     = self::body( $request );
+				$token    = self::clean_fcm_token( isset( $body['token'] ) ? $body['token'] : '' );
+				$platform = isset( $body['platform'] ) && is_string( $body['platform'] ) ? strtolower( $body['platform'] ) : '';
+				if ( '' === $token ) {
+					return Dokan_App_Helpers::error( 'dokan_app_invalid_device', 'رمز الجهاز غير صحيح.', 400 );
+				}
+				if ( ! in_array( $platform, array( 'ios', 'android' ), true ) ) {
+					return Dokan_App_Helpers::error( 'dokan_app_invalid_platform', 'نوع الجهاز غير صحيح.', 400 );
+				}
+				Dokan_App_Push::add_device( get_current_user_id(), $token, $platform );
+				return array( 'ok' => true );
+			}
+		);
+	}
+
+	/**
+	 * DELETE /devices.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function devices_remove( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$body = self::body( $request );
+				$raw  = isset( $body['token'] ) ? $body['token'] : $request->get_param( 'token' );
+				$tok  = self::clean_fcm_token( $raw );
+				if ( '' !== $tok ) {
+					Dokan_App_Push::remove_device( get_current_user_id(), $tok );
+				}
+				return array( 'ok' => true );
+			}
+		);
+	}
+
+	/* ------------------------------------------------------------------
+	 * Orders
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * GET /orders.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function orders_list( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$page     = max( 1, (int) $request->get_param( 'page' ) );
+				$per_page = 20;
+				$result   = wc_get_orders(
+					array(
+						'customer_id' => get_current_user_id(),
+						'status'      => Dokan_App_Orders::visible_statuses(),
+						'type'        => 'shop_order',
+						'limit'       => $per_page,
+						'page'        => $page,
+						'paginate'    => true,
+						'orderby'     => 'date',
+						'order'       => 'DESC',
+					)
+				);
+				$out      = array();
+				foreach ( $result->orders as $order ) {
+					if ( $order instanceof WC_Order ) {
+						$out[] = Dokan_App_Orders::summary( $order );
+					}
+				}
+				$res = rest_ensure_response( $out );
+				$res->header( 'X-WP-Total', (string) (int) $result->total );
+				$res->header( 'X-WP-TotalPages', (string) (int) $result->max_num_pages );
+				return $res;
+			}
+		);
+	}
+
+	/**
+	 * GET /orders/<id>.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function orders_get( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$order = Dokan_App_Orders::get_user_order( absint( $request['id'] ), get_current_user_id() );
+				if ( ! $order ) {
+					return Dokan_App_Helpers::error( 'dokan_app_order_not_found', 'الطلب غير موجود.', 404 );
+				}
+				return Dokan_App_Orders::detail( $order );
+			}
+		);
+	}
+
+	/**
+	 * POST /orders/<id>/reorder.
+	 * Returns {added: 0, items:[{id, quantity, variation?}], skipped}; the app adds the items
+	 * to its Store API cart via /cart/add-item (keeps cart session handling inside Store API).
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function orders_reorder( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$order = Dokan_App_Orders::get_user_order( absint( $request['id'] ), get_current_user_id() );
+				if ( ! $order ) {
+					return Dokan_App_Helpers::error( 'dokan_app_order_not_found', 'الطلب غير موجود.', 404 );
+				}
+				$r = Dokan_App_Orders::reorder_items( $order );
+				if ( empty( $r['items'] ) ) {
+					return Dokan_App_Helpers::error( 'dokan_app_reorder_empty', 'منتجات هذا الطلب غير متوفرة حاليًا.', 409 );
+				}
+				return array(
+					'added'   => 0,
+					'items'   => $r['items'],
+					'skipped' => (int) $r['skipped'],
+				);
+			}
+		);
+	}
+
+	/**
+	 * POST /orders/<id>/cancel-request.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function orders_cancel( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$order = Dokan_App_Orders::get_user_order( absint( $request['id'] ), get_current_user_id() );
+				if ( ! $order ) {
+					return Dokan_App_Helpers::error( 'dokan_app_order_not_found', 'الطلب غير موجود.', 404 );
+				}
+				$body   = self::body( $request );
+				$reason = isset( $body['reason'] ) && is_scalar( $body['reason'] ) ? sanitize_textarea_field( (string) $body['reason'] ) : '';
+				$reason = function_exists( 'mb_substr' ) ? mb_substr( $reason, 0, 500 ) : substr( $reason, 0, 1000 );
+				return Dokan_App_Orders::cancel_request( $order, $reason );
+			}
+		);
+	}
+
+	/**
+	 * GET /recommendations.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function recommendations( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$uid    = get_current_user_id();
+				$pet_id = (string) $request->get_param( 'pet_id' );
+				$pet    = null;
+				if ( '' !== $pet_id ) {
+					$pet = Dokan_App_Pets::get( $uid, $pet_id );
+					if ( ! $pet ) {
+						return Dokan_App_Helpers::error( 'dokan_app_pet_not_found', 'الحيوان الأليف غير موجود.', 404 );
+					}
+				}
+				return Dokan_App_Orders::recommendations( $uid, $pet );
+			}
+		);
+	}
+}

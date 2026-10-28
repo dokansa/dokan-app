@@ -1,0 +1,63 @@
+# Builds an Android test APK on every push (and on demand from the Actions tab).
+# Download it from the run's "Artifacts" section and install it on the phone.
+name: Android test build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      store_url:
+        description: "Store the app connects to"
+        default: "https://staging.dokansa.com"
+        required: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    env:
+      STORE_URL: ${{ github.event.inputs.store_url || 'https://staging.dokansa.com' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create Android project files
+        run: |
+          flutter create --org sa.dokansa --project-name dokan_app --platforms android .
+          rm -rf test
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' "$MANIFEST" || \
+            perl -0pi -e 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <application#' "$MANIFEST"
+          perl -pi -e 's#android:label="[^"]*"#android:label="دكان"#' "$MANIFEST"
+          GRADLE=$(ls android/app/build.gradle* | head -1)
+          perl -pi -e 's/minSdk(Version)?\s*=?\s*flutter\.minSdkVersion/minSdk = 23/' "$GRADLE"
+
+      - run: flutter pub get
+
+      - name: App icon
+        run: dart run flutter_launcher_icons
+
+      - name: Analyze
+        continue-on-error: true
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Build APK
+        run: flutter build apk --release --dart-define=STORE_URL=$STORE_URL
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dokan-app-android
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
