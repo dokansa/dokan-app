@@ -159,6 +159,15 @@ jobs:
           fi
           echo "BUILT_APK=1" >> "$GITHUB_ENV"
 
+      - name: Save build logs (on failure)
+        if: failure()
+        run: |
+          mkdir -p /tmp/ci-logs && cp -f *.log /tmp/ci-logs/ 2>/dev/null || true
+          cd /tmp/ci-logs && git init -q && git checkout -q -b ci-logs
+          git config user.name "dokan-ci" && git config user.email "dokansa36@gmail.com"
+          git add -A && git commit -qm "logs ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-logs
+
       # ---------------- Plain build (no Shorebird token yet)
       - name: Build APK
         if: env.SHOREBIRD_TOKEN == ''
