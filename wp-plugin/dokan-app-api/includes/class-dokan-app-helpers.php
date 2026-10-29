@@ -34,8 +34,8 @@ class Dokan_App_Helpers {
 			'chatwoot_token'       => '',
 			'whatsapp'             => '',
 			'riyadh_cutoff'        => '15:00',
-			'delivery_note_riyadh' => 'التوصيل داخل الرياض في نفس اليوم للطلبات قبل الساعة 3 عصرًا',
-			'delivery_note_ksa'    => 'التوصيل لباقي مناطق المملكة خلال 2-7 أيام عمل',
+			'delivery_note_riyadh' => 'التوصيل داخل الرياض خلال 1-3 أيام',
+			'delivery_note_ksa'    => 'خارج الرياض خلال 2-7 أيام، والشحن يُحسب حسب الوزن',
 			'banners'              => array(),
 			'min_ios'              => '1.0.0',
 			'min_android'          => '1.0.0',
@@ -47,8 +47,8 @@ class Dokan_App_Helpers {
 			// v1.2 — English variants, OTP channels, policies.
 			'wa_language_en'          => '',
 			'sms_message_en'          => 'Your Dokan app verification code: {code}',
-			'delivery_note_riyadh_en' => 'Same-day delivery inside Riyadh for orders placed before 3 PM',
-			'delivery_note_ksa_en'    => 'Delivery to the rest of Saudi Arabia within 2-7 working days',
+			'delivery_note_riyadh_en' => 'Delivery inside Riyadh within 1-3 days',
+			'delivery_note_ksa_en'    => 'Outside Riyadh within 2-7 days; shipping is charged by weight',
 			'delivery_note_extra_en'  => 'No deliveries on Fridays.',
 			'popular_searches_en'     => '',
 			'policy_privacy'          => 0, // 0 = auto-detect, -1 = none, >0 = page id.

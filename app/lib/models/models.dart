@@ -593,10 +593,10 @@ class StoreConfig {
           PromoBanner((b as Map)['image']?.toString() ?? '', cleanText(b['title']), b['link']?.toString() ?? '')
       ],
       deliveryRiyadh: cleanText(j['delivery_note_riyadh']).isEmpty
-          ? AppLang.t('داخل الرياض: يوصلك اليوم إذا طلبت قبل ٣ العصر', 'Riyadh: same-day delivery for orders before 3 PM')
+          ? AppLang.t('داخل الرياض: من ١ إلى ٣ أيام', 'Riyadh: 1–3 days')
           : cleanText(j['delivery_note_riyadh']),
       deliveryKsa: cleanText(j['delivery_note_ksa']).isEmpty
-          ? AppLang.t('باقي مناطق المملكة: من ٢ إلى ٧ أيام', 'Rest of Saudi Arabia: 2–7 days')
+          ? AppLang.t('خارج الرياض: من ٢ إلى ٧ أيام، والشحن حسب الوزن', 'Outside Riyadh: 2–7 days, shipping by weight')
           : cleanText(j['delivery_note_ksa']),
       otpChannels: [for (final c in (j['otp_channels'] as List? ?? const [])) c.toString()],
       policies: [

@@ -189,8 +189,10 @@ class _ProductViewState extends ConsumerState<_ProductView> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            config?.deliveryRiyadh ??
-                                context.tr('داخل الرياض: يوصلك اليوم إذا طلبت قبل ٣ العصر', 'Riyadh: same-day delivery before 3 PM'),
+                            config == null
+                                ? context.tr('داخل الرياض: من ١ إلى ٣ أيام · خارج الرياض: من ٢ إلى ٧ أيام',
+                                    'Riyadh: 1–3 days · Outside Riyadh: 2–7 days')
+                                : '${config.deliveryRiyadh}\n${config.deliveryKsa}',
                             style: const TextStyle(fontSize: 13),
                           ),
                         ),

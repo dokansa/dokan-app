@@ -463,8 +463,11 @@ class _DeliveryStrip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final note = ref.watch(configProvider).valueOrNull?.deliveryRiyadh ??
-        context.tr('داخل الرياض: يوصلك اليوم إذا طلبت قبل ٣ العصر', 'Riyadh: same-day delivery before 3 PM');
+    final cfg = ref.watch(configProvider).valueOrNull;
+    final note = cfg == null
+        ? context.tr('داخل الرياض: من ١ إلى ٣ أيام · خارج الرياض: من ٢ إلى ٧ أيام (الشحن حسب الوزن)',
+            'Riyadh: 1–3 days · Outside Riyadh: 2–7 days (shipping by weight)')
+        : '${cfg.deliveryRiyadh}\n${cfg.deliveryKsa}';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(color: C.mint, borderRadius: BorderRadius.circular(14)),

@@ -61,6 +61,28 @@ function dokan_app_activate() {
 register_activation_hook( __FILE__, 'dokan_app_activate' );
 
 /**
+ * One-time update of saved delivery notes (the store's delivery times changed:
+ * Riyadh 1-3 days, outside Riyadh 2-7 days by weight).
+ */
+add_action(
+	'init',
+	function () {
+		if ( get_option( 'dokan_app_delivery_v2' ) ) {
+			return;
+		}
+		$all = get_option( Dokan_App_Helpers::OPT_SETTINGS, array() );
+		if ( is_array( $all ) ) {
+			$d = Dokan_App_Helpers::defaults();
+			foreach ( array( 'delivery_note_riyadh', 'delivery_note_ksa', 'delivery_note_riyadh_en', 'delivery_note_ksa_en' ) as $k ) {
+				unset( $all[ $k ] );
+			}
+			update_option( Dokan_App_Helpers::OPT_SETTINGS, $all );
+		}
+		update_option( 'dokan_app_delivery_v2', 1, false );
+	}
+);
+
+/**
  * Deactivation: clear scheduled events.
  */
 function dokan_app_deactivate() {
