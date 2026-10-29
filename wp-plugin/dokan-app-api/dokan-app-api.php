@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       Dokan App API
  * Plugin URI:        https://dokansa.com
- * Description:       واجهة برمجية لتطبيق دكان للجوال: تسجيل الدخول برمز التحقق، الحيوانات الأليفة، الطلبات والتتبع، الإشعارات، وإعدادات التطبيق.
- * Version:           1.0.1
+ * Description:       واجهة برمجية لتطبيق دكان للجوال: تسجيل الدخول برمز التحقق، الحيوانات الأليفة، الطلبات والتتبع، الإشعارات، البحث الذكي والمساعد، العربية والإنجليزية، وإعدادات التطبيق.
+ * Version:           1.2.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Dokan Saudi
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'DOKAN_APP_VERSION', '1.0.1' );
+define( 'DOKAN_APP_VERSION', '1.2.0' );
 define( 'DOKAN_APP_FILE', __FILE__ );
 define( 'DOKAN_APP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DOKAN_APP_NS', 'dokan-app/v1' );
@@ -33,6 +33,8 @@ require_once DOKAN_APP_DIR . 'includes/class-dokan-app-orders.php';
 require_once DOKAN_APP_DIR . 'includes/class-dokan-app-push.php';
 require_once DOKAN_APP_DIR . 'includes/class-dokan-app-reminders.php';
 require_once DOKAN_APP_DIR . 'includes/class-dokan-app-store-api.php';
+require_once DOKAN_APP_DIR . 'includes/class-dokan-app-search.php';
+require_once DOKAN_APP_DIR . 'includes/class-dokan-app-claude.php';
 require_once DOKAN_APP_DIR . 'includes/class-dokan-app-rest.php';
 require_once DOKAN_APP_DIR . 'includes/class-dokan-app-admin.php';
 
@@ -62,6 +64,7 @@ register_activation_hook( __FILE__, 'dokan_app_activate' );
  */
 function dokan_app_deactivate() {
 	Dokan_App_Reminders::unschedule();
+	wp_clear_scheduled_hook( Dokan_App_Search::CRON_REBUILD );
 }
 register_deactivation_hook( __FILE__, 'dokan_app_deactivate' );
 
@@ -73,6 +76,7 @@ Dokan_App_Store_API::init();
 Dokan_App_Push::init();
 Dokan_App_Reminders::init();
 Dokan_App_Orders::init();
+Dokan_App_Search::init();
 Dokan_App_REST::init();
 
 if ( is_admin() ) {

@@ -56,7 +56,34 @@ class Dokan_App_OTP {
 		return (bool) apply_filters( 'dokan_app_otp_test_mode', $on );
 	}
 
-	public static function request( $raw_phone ) {
+	/**
+	 * Configured channels, preferred first (the "otp_sender" setting is the preference).
+	 *
+	 * @return string[] Subset of whatsapp|sms.
+	 */
+	public static function channels() {
+		$ok = array();
+		if ( '' !== trim( (string) Dokan_App_Helpers::setting( 'wa_phone_number_id' ) ) && '' !== trim( (string) Dokan_App_Helpers::setting( 'wa_access_token' ) ) && '' !== trim( (string) Dokan_App_Helpers::setting( 'wa_template_name' ) ) ) {
+			$ok[] = 'whatsapp';
+		}
+		if ( '' !== trim( (string) Dokan_App_Helpers::setting( 'sms_url' ) ) ) {
+			$ok[] = 'sms';
+		}
+		if ( 'sms' === Dokan_App_Helpers::setting( 'otp_sender' ) && 2 === count( $ok ) ) {
+			$ok = array( 'sms', 'whatsapp' );
+		}
+		return array_values( (array) apply_filters( 'dokan_app_otp_channels', $ok ) );
+	}
+
+	/**
+	 * Request an OTP.
+	 *
+	 * @param string $raw_phone Raw phone.
+	 * @param string $channel   Preferred channel (whatsapp|sms|'').
+	 * @return array|WP_Error
+	 */
+	public static function request( $raw_phone, $channel = '' ) {
+		$channel = in_array( $channel, array( 'whatsapp', 'sms' ), true ) ? $channel : '';
 		$phone = Dokan_App_Helpers::normalize_phone( $raw_phone );
 		if ( '' === $phone ) {
 			return Dokan_App_Helpers::error( 'dokan_app_invalid_phone', 'رقم الجوال غير صحيح. أدخل رقمًا سعوديًا يبدأ بـ 05.', 400 );
@@ -85,11 +112,13 @@ class Dokan_App_OTP {
 		if ( self::test_mode() ) {
 			// Staging only: nothing can be sent from there, so a fixed code is used.
 			$code = self::TEST_CODE;
+			$chs  = self::channels();
+			$used = '' !== $channel ? $channel : ( $chs ? $chs[0] : 'whatsapp' );
 		} else {
 			$code = str_pad( (string) random_int( 0, 999999 ), 6, '0', STR_PAD_LEFT );
-			$sent = self::send( $phone, $code );
-			if ( is_wp_error( $sent ) ) {
-				return $sent;
+			$used = self::send( $phone, $code, $channel );
+			if ( is_wp_error( $used ) ) {
+				return $used;
 			}
 		}
 
@@ -108,8 +137,9 @@ class Dokan_App_OTP {
 		);
 
 		return array(
-			'ok'  => true,
-			'ttl' => self::TTL,
+			'ok'      => true,
+			'ttl'     => self::TTL,
+			'channel' => $used,
 		);
 	}
 
@@ -179,9 +209,17 @@ class Dokan_App_OTP {
 		if ( is_wp_error( $token ) ) {
 			return $token;
 		}
+		$linked = 0;
+		try {
+			$linked = Dokan_App_Orders::link_guest_orders( $user_id, $phone );
+		} catch ( \Throwable $e ) {
+			Dokan_App_Helpers::log( 'link guest orders error: ' . $e->getMessage() );
+		}
+		Dokan_App_Helpers::remember_lang( $user_id );
 		return array(
-			'token' => $token,
-			'user'  => Dokan_App_Helpers::user_shape( $user_id ),
+			'token'         => $token,
+			'user'          => Dokan_App_Helpers::user_shape( $user_id ),
+			'linked_orders' => $linked,
 		);
 	}
 
@@ -291,32 +329,45 @@ class Dokan_App_OTP {
 	/**
 	 * Send a code via filter or built-in sender.
 	 *
-	 * @param string $phone Normalised phone (9665XXXXXXXX).
-	 * @param string $code  Code.
-	 * @return true|WP_Error
+	 * Tries the chosen channel, then the other configured one.
+	 *
+	 * @param string $phone   Normalised phone (9665XXXXXXXX).
+	 * @param string $code    Code.
+	 * @param string $channel Preferred channel ('' = store preference).
+	 * @return string|WP_Error Channel used.
 	 */
-	private static function send( $phone, $code ) {
-		$handled = apply_filters( 'dokan_app_send_otp', null, $phone, $code );
-		if ( true === $handled ) {
-			return true;
+	private static function send( $phone, $code, $channel = '' ) {
+		$configured = self::channels();
+		$order      = $configured;
+		if ( '' !== $channel ) {
+			$order = array_values( array_unique( array_merge( array( $channel ), $configured ) ) );
 		}
+		$handled = apply_filters( 'dokan_app_send_otp', null, $phone, $code, $channel, Dokan_App_Helpers::lang() );
 		if ( is_wp_error( $handled ) ) {
 			return Dokan_App_Helpers::error( 'dokan_app_send_failed', 'تعذر إرسال رمز التحقق، يرجى المحاولة لاحقًا.', 502 );
 		}
 		if ( null !== $handled && false !== $handled ) {
-			return true;
+			$ch = is_string( $handled ) && in_array( $handled, array( 'whatsapp', 'sms' ), true ) ? $handled : ( $order ? $order[0] : 'sms' );
+			return $ch;
 		}
-		$sender = Dokan_App_Helpers::setting( 'otp_sender' );
-		try {
-			if ( 'whatsapp' === $sender ) {
-				return self::send_whatsapp( $phone, $code );
+		$last = null;
+		foreach ( $order as $ch ) {
+			if ( ! in_array( $ch, $configured, true ) ) {
+				continue; // Chosen but not configured: fall back.
 			}
-			if ( 'sms' === $sender ) {
-				return self::send_sms( $phone, $code );
+			try {
+				$r = 'whatsapp' === $ch ? self::send_whatsapp( $phone, $code ) : self::send_sms( $phone, $code );
+			} catch ( \Throwable $e ) {
+				Dokan_App_Helpers::log( 'OTP send exception (' . $ch . '): ' . $e->getMessage() );
+				$r = Dokan_App_Helpers::error( 'dokan_app_send_failed', 'تعذر إرسال رمز التحقق، يرجى المحاولة لاحقًا.', 502 );
 			}
-		} catch ( \Throwable $e ) {
-			Dokan_App_Helpers::log( 'OTP send exception: ' . $e->getMessage() );
-			return Dokan_App_Helpers::error( 'dokan_app_send_failed', 'تعذر إرسال رمز التحقق، يرجى المحاولة لاحقًا.', 502 );
+			if ( true === $r ) {
+				return $ch;
+			}
+			$last = $r;
+		}
+		if ( is_wp_error( $last ) ) {
+			return $last;
 		}
 		return Dokan_App_Helpers::error( 'dokan_app_no_sender', 'خدمة إرسال رمز التحقق غير مفعّلة حاليًا. يرجى التواصل مع المتجر أو تسجيل الدخول بالبريد وكلمة المرور.', 503 );
 	}
@@ -333,6 +384,11 @@ class Dokan_App_OTP {
 		$token = trim( (string) Dokan_App_Helpers::setting( 'wa_access_token' ) );
 		$tpl   = trim( (string) Dokan_App_Helpers::setting( 'wa_template_name' ) );
 		$lang  = trim( (string) Dokan_App_Helpers::setting( 'wa_language' ) );
+		// English template language when the app is in English and an English template is set.
+		$lang_en = trim( (string) Dokan_App_Helpers::setting( 'wa_language_en' ) );
+		if ( Dokan_App_Helpers::is_en() && '' !== $lang_en ) {
+			$lang = $lang_en;
+		}
 		if ( '' === $pnid || '' === $token || '' === $tpl ) {
 			return Dokan_App_Helpers::error( 'dokan_app_no_sender', 'خدمة إرسال رمز التحقق غير مفعّلة حاليًا.', 503 );
 		}
@@ -401,12 +457,12 @@ class Dokan_App_OTP {
 	private static function send_sms( $phone, $code ) {
 		$tpl_url = trim( (string) Dokan_App_Helpers::setting( 'sms_url' ) );
 		$method  = strtoupper( (string) Dokan_App_Helpers::setting( 'sms_method' ) );
-		$msg_tpl = (string) Dokan_App_Helpers::setting( 'sms_message' );
+		$msg_tpl = (string) Dokan_App_Helpers::setting_l( 'sms_message' );
 		if ( '' === $tpl_url ) {
 			return Dokan_App_Helpers::error( 'dokan_app_no_sender', 'خدمة إرسال رمز التحقق غير مفعّلة حاليًا.', 503 );
 		}
 		if ( false === strpos( $msg_tpl, '{code}' ) ) {
-			$msg_tpl = 'رمز التحقق: {code}';
+			$msg_tpl = Dokan_App_Helpers::t( 'رمز التحقق: {code}', 'Verification code: {code}' );
 		}
 		$message = str_replace( '{code}', $code, $msg_tpl );
 		$url     = str_replace(

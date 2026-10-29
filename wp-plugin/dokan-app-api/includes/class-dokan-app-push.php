@@ -307,9 +307,11 @@ class Dokan_App_Push {
 	 * @param string $title Title.
 	 * @param string $body  Body.
 	 * @param array  $data  Data.
+	 * @param string $title_en Optional English title (sent to customers using the app in English).
+	 * @param string $body_en  Optional English body.
 	 * @return array {users, sent}
 	 */
-	public static function broadcast( $title, $body, $data = array() ) {
+	public static function broadcast( $title, $body, $data = array(), $title_en = '', $body_en = '' ) {
 		$users = get_users(
 			array(
 				'meta_key'     => self::META_DEVICES, // phpcs:ignore WordPress.DB.SlowDBQuery
@@ -322,8 +324,10 @@ class Dokan_App_Push {
 		if ( function_exists( 'set_time_limit' ) ) {
 			@set_time_limit( 0 ); // phpcs:ignore
 		}
+		$has_en = '' !== $title_en && '' !== $body_en;
 		foreach ( $users as $uid ) {
-			$sent += self::send_to_user( (int) $uid, $title, $body, $data );
+			$en    = $has_en && 'en' === Dokan_App_Helpers::user_lang( (int) $uid );
+			$sent += self::send_to_user( (int) $uid, $en ? $title_en : $title, $en ? $body_en : $body, $data );
 		}
 		return array(
 			'users' => count( $users ),
@@ -358,15 +362,22 @@ class Dokan_App_Push {
 			if ( ! $is_app && empty( self::devices( $uid ) ) ) {
 				return;
 			}
-			$num = $order->get_order_number();
-			$map = array(
+			$num  = $order->get_order_number();
+			$lang = Dokan_App_Helpers::user_lang( $uid );
+			$map  = 'en' === $lang ? array(
+				'processing'       => array( 'Your order is being prepared', 'We received your order #' . $num . ' and are preparing it now.' ),
+				'shipped'          => array( 'Your order has shipped 🚚', 'Order #' . $num . ' is on its way. You can track it in the app.' ),
+				'out-for-delivery' => array( 'Out for delivery', 'The courier is on the way with your order #' . $num . '.' ),
+				'completed'        => array( 'Your order was delivered ✅', 'We hope you and your pet love order #' . $num . '.' ),
+				'cancelled'        => array( 'Your order was cancelled', 'Order #' . $num . ' was cancelled. Contact us if you have any questions.' ),
+			) : array(
 				'processing'       => array( 'طلبك قيد التجهيز', 'استلمنا طلبك رقم #' . $num . ' ونعمل على تجهيزه الآن.' ),
 				'shipped'          => array( 'تم شحن طلبك 🚚', 'طلبك رقم #' . $num . ' في الطريق إليك. يمكنك تتبعه من التطبيق.' ),
 				'out-for-delivery' => array( 'طلبك خرج للتوصيل', 'المندوب في طريقه إليك بطلبك رقم #' . $num . '.' ),
 				'completed'        => array( 'تم توصيل طلبك ✅', 'نتمنى أن ينال طلبك رقم #' . $num . ' إعجابك وإعجاب حيوانك الأليف.' ),
 				'cancelled'        => array( 'تم إلغاء طلبك', 'تم إلغاء طلبك رقم #' . $num . '. للاستفسار تواصل معنا.' ),
 			);
-			$map = apply_filters( 'dokan_app_status_push_messages', $map, $order );
+			$map = apply_filters( 'dokan_app_status_push_messages', $map, $order, $lang );
 			if ( ! isset( $map[ $to ] ) ) {
 				return;
 			}

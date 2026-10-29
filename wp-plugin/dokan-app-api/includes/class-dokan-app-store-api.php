@@ -105,6 +105,67 @@ class Dokan_App_Store_API {
 					},
 				),
 			),
+			'lat'      => array(
+				'description' => 'Delivery location latitude',
+				'type'        => array( 'number', 'null' ),
+				'context'     => array( 'view', 'edit' ),
+				'readonly'    => false,
+				'optional'    => true,
+			),
+			'lng'      => array(
+				'description' => 'Delivery location longitude',
+				'type'        => array( 'number', 'null' ),
+				'context'     => array( 'view', 'edit' ),
+				'readonly'    => false,
+				'optional'    => true,
+			),
+			'accuracy' => array(
+				'description' => 'Location accuracy in metres',
+				'type'        => array( 'number', 'null' ),
+				'context'     => array( 'view', 'edit' ),
+				'readonly'    => false,
+				'optional'    => true,
+			),
+		);
+	}
+
+	/**
+	 * Order meta keys for the customer's map location (filterable so they can also be written
+	 * to the keys the website's own map picker uses). Each value may be a key or a list of keys.
+	 *
+	 * @return array {lat, lng, accuracy}
+	 */
+	public static function location_meta_keys() {
+		return (array) apply_filters(
+			'dokan_app_location_meta_keys',
+			array(
+				'lat'      => '_dokan_app_lat',
+				'lng'      => '_dokan_app_lng',
+				'accuracy' => '_dokan_app_loc_accuracy',
+			)
+		);
+	}
+
+	/**
+	 * Validated location from the checkout extension data, or null.
+	 *
+	 * @param array $data Extension data.
+	 * @return array|null
+	 */
+	private static function location_from( $data ) {
+		if ( ! is_array( $data ) || ! isset( $data['lat'], $data['lng'] ) || ! is_numeric( $data['lat'] ) || ! is_numeric( $data['lng'] ) ) {
+			return null;
+		}
+		$lat = (float) $data['lat'];
+		$lng = (float) $data['lng'];
+		if ( $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180 || ( 0.0 === $lat && 0.0 === $lng ) ) {
+			return null;
+		}
+		$acc = isset( $data['accuracy'] ) && is_numeric( $data['accuracy'] ) && (float) $data['accuracy'] >= 0 ? round( (float) $data['accuracy'], 1 ) : null;
+		return array(
+			'lat'      => round( $lat, 7 ),
+			'lng'      => round( $lng, 7 ),
+			'accuracy' => $acc,
 		);
 	}
 
@@ -165,6 +226,30 @@ class Dokan_App_Store_API {
 			} else {
 				$order->delete_meta_data( '_dokan_app_pet_id' );
 			}
+
+			// Customer's map location.
+			$loc = self::location_from( is_array( $ext ) && isset( $ext[ self::NS ] ) ? $ext[ self::NS ] : null );
+			if ( null !== $loc ) {
+				foreach ( self::location_meta_keys() as $field => $keys ) {
+					if ( ! array_key_exists( $field, $loc ) || null === $loc[ $field ] ) {
+						continue;
+					}
+					foreach ( (array) $keys as $key ) {
+						if ( is_string( $key ) && '' !== $key ) {
+							$order->update_meta_data( $key, (string) $loc[ $field ] );
+						}
+					}
+				}
+				$order->update_meta_data( '_dokan_app_loc_pending_note', $loc['lat'] . ',' . $loc['lng'] );
+			}
+
+			// Logged-in app customer: store their phone as billing phone when missing.
+			if ( $uid > 0 && '' === trim( (string) $order->get_billing_phone() ) ) {
+				$phone = Dokan_App_Helpers::user_phone( $uid );
+				if ( '' !== $phone ) {
+					$order->set_billing_phone( (string) apply_filters( 'dokan_app_order_billing_phone', $phone, $order ) ); // 9665XXXXXXXX.
+				}
+			}
 			$order->save();
 		} catch ( \Throwable $e ) {
 			Dokan_App_Helpers::log( 'tag order error: ' . $e->getMessage() );
@@ -194,6 +279,12 @@ class Dokan_App_Store_API {
 				$label = 'ios' === $platform ? 'iOS' : ( 'android' === $platform ? 'Android' : 'iOS/Android' );
 				$order->add_order_note( 'طلب من التطبيق (' . $label . ')' );
 				$order->update_meta_data( '_dokan_app_noted', 1 );
+			}
+			$loc = (string) $order->get_meta( '_dokan_app_loc_pending_note' );
+			if ( '' !== $loc && ! $order->get_meta( '_dokan_app_loc_noted' ) ) {
+				$order->add_order_note( 'موقع العميل على الخريطة: https://maps.google.com/?q=' . $loc );
+				$order->update_meta_data( '_dokan_app_loc_noted', 1 );
+				$order->delete_meta_data( '_dokan_app_loc_pending_note' );
 			}
 			$order->save();
 		} catch ( \Throwable $e ) {

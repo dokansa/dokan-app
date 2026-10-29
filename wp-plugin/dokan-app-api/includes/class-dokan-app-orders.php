@@ -400,9 +400,9 @@ class Dokan_App_Orders {
 			array(
 				'cat'   => array( 'cat', 'cats', 'kitten', 'قطط', 'قط', 'القطط' ),
 				'dog'   => array( 'dog', 'dogs', 'puppy', 'كلاب', 'كلب', 'الكلاب' ),
-				'bird'  => array( 'bird', 'birds', 'طيور', 'الطيور', 'عصافير' ),
+				'bird'  => array( 'bird', 'birds', 'طيور', 'الطيور', 'عصافير', 'ببغاء', 'كناري' ),
 				'fish'  => array( 'fish', 'aquarium', 'أسماك', 'اسماك', 'سمك', 'الأسماك' ),
-				'small' => array( 'small', 'rabbit', 'hamster', 'حيوانات صغيرة', 'أرانب', 'ارانب', 'قوارض', 'هامستر' ),
+				'small' => array( 'small', 'rabbit', 'hamster', 'حيوانات صغيرة', 'أرانب', 'ارانب', 'قوارض', 'هامستر', 'سلاحف', 'سلحفاة', 'turtle', 'turtles' ),
 			)
 		);
 	}
@@ -782,6 +782,146 @@ class Dokan_App_Orders {
 		$ids = array_values( array_unique( array_filter( array_map( 'intval', $ids ) ) ) );
 		$ids = array_slice( $ids, 0, 20 );
 		return array_values( array_map( 'intval', (array) apply_filters( 'dokan_app_recommendations', $ids, $user_id, $pet ) ) );
+	}
+
+	/* ------------------------------------------------------------------
+	 * Purchased products (v1.1) / guest order linking (v1.2)
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * Product ids the customer bought (parents), most frequent then most recent, only published
+	 * and in stock, max 20. Polylang: mapped to the copy in the request language.
+	 *
+	 * @param int $user_id User.
+	 * @return int[]
+	 */
+	public static function purchased_ids( $user_id ) {
+		$want     = array( 'wc-processing', 'wc-completed', 'wc-on-hold', 'wc-shipped', 'wc-out-for-delivery', 'wc-delivered' );
+		$statuses = array_values( array_intersect( $want, array_keys( wc_get_order_statuses() ) ) );
+		$orders   = wc_get_orders(
+			array(
+				'customer_id' => (int) $user_id,
+				'status'      => $statuses,
+				'type'        => 'shop_order',
+				'limit'       => 50,
+				'orderby'     => 'date',
+				'order'       => 'DESC',
+			)
+		);
+		$freq   = array();
+		$recent = array();
+		foreach ( (array) $orders as $order ) {
+			if ( ! $order instanceof WC_Order ) {
+				continue;
+			}
+			$ts   = $order->get_date_created() ? $order->get_date_created()->getTimestamp() : 0;
+			$seen = array();
+			foreach ( $order->get_items() as $item ) {
+				if ( ! is_callable( array( $item, 'get_product_id' ) ) ) {
+					continue;
+				}
+				$pid = (int) $item->get_product_id(); // Parent id for variations.
+				if ( $pid < 1 || isset( $seen[ $pid ] ) ) {
+					continue;
+				}
+				$seen[ $pid ]  = true;
+				$freq[ $pid ]  = ( isset( $freq[ $pid ] ) ? $freq[ $pid ] : 0 ) + 1;
+				if ( ! isset( $recent[ $pid ] ) ) {
+					$recent[ $pid ] = $ts;
+				}
+			}
+		}
+		$ids = array_keys( $freq );
+		usort(
+			$ids,
+			function ( $a, $b ) use ( $freq, $recent ) {
+				if ( $freq[ $a ] !== $freq[ $b ] ) {
+					return $freq[ $b ] - $freq[ $a ];
+				}
+				return $recent[ $b ] - $recent[ $a ];
+			}
+		);
+		$lang = Dokan_App_Helpers::lang();
+		$out  = array();
+		foreach ( $ids as $pid ) {
+			if ( function_exists( 'pll_get_post' ) ) {
+				$tr = (int) pll_get_post( $pid, $lang );
+				if ( $tr > 0 ) {
+					$pid = $tr;
+				}
+			}
+			if ( in_array( $pid, $out, true ) || 'publish' !== get_post_status( $pid ) ) {
+				continue;
+			}
+			$p = wc_get_product( $pid );
+			if ( ! $p || ! $p->is_in_stock() ) {
+				continue;
+			}
+			$out[] = (int) $pid;
+			if ( count( $out ) >= 20 ) {
+				break;
+			}
+		}
+		return array_values( array_map( 'intval', (array) apply_filters( 'dokan_app_purchased_ids', $out, $user_id ) ) );
+	}
+
+	/**
+	 * Attach past guest orders (customer_id = 0) whose billing phone matches the account phone
+	 * (last 9 digits) to the account. At most $limit per call; idempotent (attached orders are
+	 * no longer guest orders).
+	 *
+	 * @param int    $user_id User.
+	 * @param string $phone   Normalised phone (optional; read from the user otherwise).
+	 * @param int    $limit   Batch size.
+	 * @return int Number attached now.
+	 */
+	public static function link_guest_orders( $user_id, $phone = '', $limit = 200 ) {
+		global $wpdb;
+		$user_id = (int) $user_id;
+		if ( $user_id < 1 || ! function_exists( 'wc_get_order' ) ) {
+			return 0;
+		}
+		if ( '' === $phone ) {
+			$phone = Dokan_App_Helpers::user_phone( $user_id );
+		}
+		$last9 = Dokan_App_Helpers::last9( $phone );
+		if ( '' === $last9 ) {
+			return 0;
+		}
+		$like = '%' . $wpdb->esc_like( $last9 );
+		$hpos = class_exists( '\Automattic\WooCommerce\Utilities\OrderUtil' ) && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
+		$norm = "REPLACE(REPLACE(REPLACE(%s,' ',''),'-',''),'+','')";
+		if ( $hpos ) {
+			$orders = $wpdb->prefix . 'wc_orders';
+			$addr   = $wpdb->prefix . 'wc_order_addresses';
+			$col    = sprintf( $norm, 'a.phone' );
+			$sql    = "SELECT o.id, a.phone FROM {$orders} o INNER JOIN {$addr} a ON a.order_id = o.id AND a.address_type = 'billing' WHERE o.type = 'shop_order' AND o.customer_id = 0 AND {$col} LIKE %s ORDER BY o.id DESC LIMIT %d";
+		} else {
+			$col = sprintf( $norm, 'pm.meta_value' );
+			$sql = "SELECT p.ID, pm.meta_value FROM {$wpdb->posts} p INNER JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID AND pm.meta_key = '_billing_phone' INNER JOIN {$wpdb->postmeta} cu ON cu.post_id = p.ID AND cu.meta_key = '_customer_user' WHERE p.post_type = 'shop_order' AND cu.meta_value IN ('0','') AND {$col} LIKE %s ORDER BY p.ID DESC LIMIT %d";
+		}
+		$rows   = $wpdb->get_results( $wpdb->prepare( $sql, $like, max( 1, min( 200, (int) $limit ) ) ), ARRAY_N ); // phpcs:ignore WordPress.DB
+		$linked = 0;
+		foreach ( (array) $rows as $r ) {
+			if ( Dokan_App_Helpers::last9( $r[1] ) !== $last9 ) {
+				continue;
+			}
+			$order = wc_get_order( (int) $r[0] );
+			if ( ! $order instanceof WC_Order || $order instanceof WC_Order_Refund || 0 !== (int) $order->get_customer_id() ) {
+				continue;
+			}
+			if ( ! apply_filters( 'dokan_app_link_guest_order', true, $order, $user_id ) ) {
+				continue;
+			}
+			$order->set_customer_id( $user_id );
+			$order->add_order_note( 'تم ربط الطلب بحساب العميل تلقائيًا عند تسجيل الدخول من التطبيق (تطابق رقم الجوال).' );
+			$order->save();
+			$linked++;
+		}
+		if ( $linked ) {
+			do_action( 'dokan_app_guest_orders_linked', $user_id, $linked );
+		}
+		return $linked;
 	}
 
 	/**

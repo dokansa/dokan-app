@@ -3,7 +3,7 @@ Contributors: dokansa
 Requires at least: 5.8
 Requires PHP: 7.4
 WC requires at least: 6.0
-Stable tag: 1.0.0
+Stable tag: 1.2.0
 License: GPLv2 or later
 
 واجهة برمجية لتطبيق دكان للجوال (Flutter) — Backend for the Dokan mobile app.
@@ -38,3 +38,20 @@ License: GPLv2 or later
    dokan_app_config, dokan_app_recommendations, dokan_app_phone_meta_keys.
 
 Uninstalling deletes the plugin options only; customer data (pets, devices) and order meta are kept.
+
+== Changelog ==
+
+= 1.2.0 =
+* Arabic + English: every route honours `lang=ar|en` (or Accept-Language). Errors, search replies/chips/suggestions,
+  assistant answers, OTP text and pushes (customer's last language, user meta `_dokan_app_lang`). Search index per language.
+* OTP `channel` (whatsapp|sms) with automatic fallback; `otp_channels` in /config; response `channel`.
+* Past guest orders with the same phone (last 9 digits) are attached on login (`linked_orders`, max 200 per login).
+* Policies in /config + GET /pages/<id>; complaints text (ar/en) in settings.
+* Checkout `lat`/`lng`/`accuracy` → order meta (filter `dokan_app_location_meta_keys`) + Google Maps order note.
+
+= 1.1.0 =
+* GET /search (Arabic normaliser, concept parser, in-memory index), POST /assistant, GET /me/purchased.
+* Optional Claude (server side only) for intent parsing and the assistant; rule-based fallback always works.
+* Customer search report (WooCommerce → تطبيق دكان → بحث العملاء), popular searches, pet_categories.
+* Filters: dokan_app_search_lexicon, dokan_app_search_stop_words, dokan_app_search_types, dokan_app_search_brand_aliases,
+  dokan_app_brand_taxonomies, dokan_app_popular_searches, dokan_app_purchased_ids, dokan_app_policies, dokan_app_otp_channels.

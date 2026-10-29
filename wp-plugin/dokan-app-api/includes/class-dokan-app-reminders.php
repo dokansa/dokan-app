@@ -137,15 +137,28 @@ class Dokan_App_Reminders {
 			// Mark first so a failure can't cause repeated pushes.
 			wc_update_order_item_meta( $s['_item_id'], self::ITEM_META, time() );
 
-			$title = 'قرّب يخلص؟ 🐾';
-			if ( $s['days_left'] < 1 ) {
-				$body = '' !== $pet_name
-					? sprintf( 'يبدو أن %1$s خلص عند %2$s. اطلبه الآن بضغطة واحدة.', $s['name'], $pet_name )
-					: sprintf( 'يبدو أن %s خلص. اطلبه الآن بضغطة واحدة.', $s['name'] );
+			if ( 'en' === Dokan_App_Helpers::user_lang( $user_id ) ) {
+				$title = 'Running low? 🐾';
+				if ( $s['days_left'] < 1 ) {
+					$body = '' !== $pet_name
+						? sprintf( 'Looks like %2$s has run out of %1$s. Reorder in one tap.', $s['name'], $pet_name )
+						: sprintf( 'Looks like %s has run out. Reorder in one tap.', $s['name'] );
+				} else {
+					$body = '' !== $pet_name
+						? sprintf( 'About %1$d days of %2$s left for %3$s. Reorder now so it arrives in time.', $s['days_left'], $s['name'], $pet_name )
+						: sprintf( 'About %1$d days of %2$s left. Reorder now so it arrives in time.', $s['days_left'], $s['name'] );
+				}
 			} else {
-				$body = '' !== $pet_name
-					? sprintf( 'باقي تقريبًا %1$d أيام على نفاد %2$s عند %3$s. اطلبه الآن ليصلك في الوقت.', $s['days_left'], $s['name'], $pet_name )
-					: sprintf( 'باقي تقريبًا %1$d أيام على نفاد %2$s. اطلبه الآن ليصلك في الوقت.', $s['days_left'], $s['name'] );
+				$title = 'قرّب يخلص؟ 🐾';
+				if ( $s['days_left'] < 1 ) {
+					$body = '' !== $pet_name
+						? sprintf( 'يبدو أن %1$s خلص عند %2$s. اطلبه الآن بضغطة واحدة.', $s['name'], $pet_name )
+						: sprintf( 'يبدو أن %s خلص. اطلبه الآن بضغطة واحدة.', $s['name'] );
+				} else {
+					$body = '' !== $pet_name
+						? sprintf( 'باقي تقريبًا %1$d أيام على نفاد %2$s عند %3$s. اطلبه الآن ليصلك في الوقت.', $s['days_left'], $s['name'], $pet_name )
+						: sprintf( 'باقي تقريبًا %1$d أيام على نفاد %2$s. اطلبه الآن ليصلك في الوقت.', $s['days_left'], $s['name'] );
+				}
 			}
 			$data = array(
 				'type'       => 'reminder',

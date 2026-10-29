@@ -21,6 +21,9 @@ class Dokan_App_Admin {
 		add_action( 'admin_post_dokan_app_save_settings', array( __CLASS__, 'save_settings' ) );
 		add_action( 'admin_post_dokan_app_broadcast', array( __CLASS__, 'broadcast' ) );
 		add_action( 'admin_post_dokan_app_test_push', array( __CLASS__, 'test_push' ) );
+		add_action( 'admin_post_dokan_app_clear_search_log', array( __CLASS__, 'clear_search_log' ) );
+		add_action( 'admin_post_dokan_app_rebuild_search', array( __CLASS__, 'rebuild_search' ) );
+		add_action( 'admin_post_dokan_app_test_claude', array( __CLASS__, 'test_claude' ) );
 
 		// Orders list badge — legacy (posts) screen.
 		add_filter( 'manage_edit-shop_order_columns', array( __CLASS__, 'add_column' ), 20 );
@@ -168,13 +171,30 @@ class Dokan_App_Admin {
 			'empty'      => array( 'error', 'يرجى كتابة عنوان ونص الإشعار.' ),
 			'test_sent'  => array( 'success', sprintf( 'تم إرسال إشعار تجريبي إلى %d جهاز.', $count ) ),
 			'no_user'    => array( 'error', 'لم يتم العثور على عميل بهذا الرقم أو لا توجد لديه أجهزة مسجلة.' ),
+			'log_clear'  => array( 'success', 'تم مسح سجل البحث.' ),
+			'reindexed'  => array( 'success', 'تمت إعادة بناء فهرس البحث.' ),
+			'claude_ok'  => array( 'success', 'تم الاتصال بـ Claude بنجاح.' ),
+			'claude_bad' => array( 'error', 0 === $count ? 'تعذر الاتصال بـ Claude (قد يكون الخادم يمنع الاتصالات الخارجية، مثل نسخة الـ staging).' : sprintf( 'رفض Claude الطلب (HTTP %d). تأكد من المفتاح واسم النموذج.', $count ) ),
+			'claude_nok' => array( 'error', 'أدخل مفتاح Claude API أولاً.' ),
 		);
+		$tab = isset( $_GET['tab'] ) && 'search' === $_GET['tab'] ? 'search' : 'settings'; // phpcs:ignore WordPress.Security.NonceVerification
 		?>
 		<div class="wrap" dir="rtl" style="max-width:960px">
 			<h1>تطبيق دكان</h1>
 			<?php if ( isset( $msgs[ $notice ] ) ) : ?>
 				<div class="notice notice-<?php echo esc_attr( $msgs[ $notice ][0] ); ?> is-dismissible"><p><?php echo esc_html( $msgs[ $notice ][1] ); ?></p></div>
 			<?php endif; ?>
+			<nav class="nav-tab-wrapper" style="margin-bottom:12px">
+				<a class="nav-tab <?php echo 'settings' === $tab ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::SLUG ) ); ?>">الإعدادات</a>
+				<a class="nav-tab <?php echo 'search' === $tab ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::SLUG . '&tab=search' ) ); ?>">بحث العملاء</a>
+			</nav>
+			<?php
+			if ( 'search' === $tab ) {
+				self::render_search_tab();
+				echo '</div>';
+				return;
+			}
+			?>
 
 			<p>رابط واجهة التطبيق: <code><?php echo esc_html( rest_url( DOKAN_APP_NS ) ); ?></code></p>
 
@@ -212,6 +232,11 @@ class Dokan_App_Admin {
 						<th scope="row"><label for="wa_lang">رمز اللغة</label></th>
 						<td><input id="wa_lang" class="small-text" dir="ltr" name="s[wa_language]" value="<?php echo esc_attr( $s['wa_language'] ); ?>"></td>
 					</tr>
+					<tr>
+						<th scope="row"><label for="wa_lang_en">رمز لغة القالب الإنجليزي (اختياري)</label></th>
+						<td><input id="wa_lang_en" class="small-text" dir="ltr" name="s[wa_language_en]" value="<?php echo esc_attr( $s['wa_language_en'] ); ?>" placeholder="en">
+						<p class="description">إذا اعتمدت نسخة إنجليزية من نفس القالب، اكتب رمزها (مثل en أو en_US) لترسل للعملاء الذين يستخدمون التطبيق بالإنجليزي.</p></td>
+					</tr>
 					<tr><th colspan="2"><strong>بوابة SMS</strong></th></tr>
 					<tr>
 						<th scope="row"><label for="sms_url">رابط البوابة</label></th>
@@ -229,6 +254,15 @@ class Dokan_App_Admin {
 						<th scope="row"><label for="sms_msg">نص الرسالة</label></th>
 						<td><input id="sms_msg" class="large-text" name="s[sms_message]" value="<?php echo esc_attr( $s['sms_message'] ); ?>">
 						<p class="description">يجب أن يحتوي على <code>{code}</code>.</p></td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="sms_msg_en">نص الرسالة (إنجليزي)</label></th>
+						<td><input id="sms_msg_en" class="large-text" dir="ltr" name="s[sms_message_en]" value="<?php echo esc_attr( $s['sms_message_en'] ); ?>"></td>
+					</tr>
+					<tr>
+						<th scope="row">القنوات المتاحة في التطبيق</th>
+						<td><code dir="ltr"><?php echo esc_html( implode( ', ', Dokan_App_OTP::channels() ) ); ?></code>
+						<p class="description">يظهر للعميل اختيار واتساب أو SMS حسب المضبوط هنا. "طريقة الإرسال" أعلاه هي القناة المفضلة، وإذا فشلت يُرسل بالقناة الثانية تلقائيًا.</p></td>
 					</tr>
 				</table>
 
@@ -281,6 +315,88 @@ class Dokan_App_Admin {
 						<th scope="row"><label for="dn_k">ملاحظة التوصيل — باقي المملكة</label></th>
 						<td><textarea id="dn_k" class="large-text" rows="2" name="s[delivery_note_ksa]"><?php echo esc_textarea( $s['delivery_note_ksa'] ); ?></textarea></td>
 					</tr>
+					<tr>
+						<th scope="row"><label for="dn_x">ملاحظة إضافية</label></th>
+						<td><textarea id="dn_x" class="large-text" rows="2" name="s[delivery_note_extra]"><?php echo esc_textarea( $s['delivery_note_extra'] ); ?></textarea>
+						<p class="description">يستخدمها المساعد الذكي فقط (مثل: لا يوجد توصيل يوم الجمعة).</p></td>
+					</tr>
+					<tr><th colspan="2"><strong>English</strong></th></tr>
+					<tr>
+						<th scope="row"><label for="dn_r_en">Delivery note — Riyadh</label></th>
+						<td><textarea id="dn_r_en" class="large-text" rows="2" dir="ltr" name="s[delivery_note_riyadh_en]"><?php echo esc_textarea( $s['delivery_note_riyadh_en'] ); ?></textarea></td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="dn_k_en">Delivery note — rest of KSA</label></th>
+						<td><textarea id="dn_k_en" class="large-text" rows="2" dir="ltr" name="s[delivery_note_ksa_en]"><?php echo esc_textarea( $s['delivery_note_ksa_en'] ); ?></textarea></td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="dn_x_en">Extra note</label></th>
+						<td><textarea id="dn_x_en" class="large-text" rows="2" dir="ltr" name="s[delivery_note_extra_en]"><?php echo esc_textarea( $s['delivery_note_extra_en'] ); ?></textarea></td>
+					</tr>
+				</table>
+
+				<h2>البحث الذكي والمساعد (Claude)</h2>
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row"><label for="claude_key">Claude API key</label></th>
+						<td>
+							<input id="claude_key" type="password" autocomplete="new-password" class="regular-text" dir="ltr" name="claude_key" value="" placeholder="<?php echo '' !== Dokan_App_Claude::key_hint() ? esc_attr( 'محفوظ: ' . Dokan_App_Claude::key_hint() . ' — اتركه فارغًا للإبقاء' ) : 'sk-ant-...'; ?>">
+							<label><input type="checkbox" name="claude_key_clear" value="1"> حذف المفتاح المحفوظ</label>
+							<p class="description">يُحفظ على الخادم فقط ولا يُرسل للتطبيق. بدون مفتاح يعمل البحث والمساعد بالقواعد الداخلية.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="claude_model">Claude model</label></th>
+						<td><input id="claude_model" class="regular-text" dir="ltr" name="s[claude_model]" value="<?php echo esc_attr( $s['claude_model'] ); ?>"></td>
+					</tr>
+					<tr>
+						<th scope="row">تفعيل المساعد الذكي</th>
+						<td><label><input type="checkbox" name="s[assistant_enabled]" value="1" <?php checked( ! empty( $s['assistant_enabled'] ) ); ?>> تفعيل (يتطلب مفتاح Claude)</label></td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="pop_s">عمليات البحث الشائعة</label></th>
+						<td><textarea id="pop_s" class="large-text" rows="4" name="s[popular_searches]"><?php echo esc_textarea( $s['popular_searches'] ); ?></textarea>
+						<p class="description">كلمة في كل سطر، تظهر في شاشة البحث. اتركها فارغة لعرض أكثر ما يبحث عنه العملاء تلقائيًا.</p></td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="pop_s_en">Popular searches (English)</label></th>
+						<td><textarea id="pop_s_en" class="large-text" rows="4" dir="ltr" name="s[popular_searches_en]"><?php echo esc_textarea( $s['popular_searches_en'] ); ?></textarea></td>
+					</tr>
+				</table>
+
+				<h2>السياسات</h2>
+				<p class="description">اختر صفحة لكل سياسة (تلقائي = يبحث عن الصفحة بالرابط المعتاد). تُعرض الترجمة الإنجليزية من Polylang إن وجدت.</p>
+				<table class="form-table" role="presentation">
+					<?php foreach ( Dokan_App_REST::policy_defs() as $pkey => $pdef ) : ?>
+						<?php $auto = Dokan_App_REST::policy_page( $pkey ); ?>
+						<tr>
+							<th scope="row"><label for="pol_<?php echo esc_attr( $pkey ); ?>"><?php echo esc_html( $pdef['title'][0] ); ?></label></th>
+							<td>
+								<?php
+								wp_dropdown_pages(
+									array(
+										'name'              => 's[policy_' . esc_attr( $pkey ) . ']',
+										'id'                => 'pol_' . esc_attr( $pkey ),
+										'selected'          => (int) $s[ 'policy_' . $pkey ],
+										'show_option_none'  => 'تلقائي',
+										'option_none_value' => '0',
+										'post_status'       => 'publish',
+									)
+								);
+								?>
+								<label><input type="checkbox" name="policy_off[<?php echo esc_attr( $pkey ); ?>]" value="1" <?php checked( (int) $s[ 'policy_' . $pkey ] < 0 ); ?>> إخفاء</label>
+								<p class="description">الحالية: <?php echo $auto ? esc_html( get_the_title( $auto ) . ' (#' . $auto . ')' ) : 'لا توجد'; ?></p>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+					<tr>
+						<th scope="row"><label for="cmp_ar">الشكاوى والإلغاء</label></th>
+						<td><textarea id="cmp_ar" class="large-text" rows="4" name="s[complaints_ar]"><?php echo esc_textarea( $s['complaints_ar'] ); ?></textarea></td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="cmp_en">Complaints & cancellation (English)</label></th>
+						<td><textarea id="cmp_en" class="large-text" rows="4" dir="ltr" name="s[complaints_en]"><?php echo esc_textarea( $s['complaints_en'] ); ?></textarea></td>
+					</tr>
 				</table>
 
 				<h2>البنرات</h2>
@@ -314,6 +430,12 @@ class Dokan_App_Admin {
 				<?php submit_button( 'حفظ الإعدادات' ); ?>
 			</form>
 
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+				<input type="hidden" name="action" value="dokan_app_test_claude">
+				<?php wp_nonce_field( 'dokan_app_test_claude' ); ?>
+				<?php submit_button( 'اختبار الاتصال بـ Claude', 'secondary', 'submit', false ); ?>
+			</form>
+
 			<hr>
 			<h2>إرسال إشعار لجميع مستخدمي التطبيق</h2>
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" onsubmit="return confirm('سيتم إرسال الإشعار لجميع المستخدمين. متابعة؟');">
@@ -327,6 +449,15 @@ class Dokan_App_Admin {
 					<tr>
 						<th scope="row"><label for="b_body">النص</label></th>
 						<td><textarea id="b_body" class="large-text" rows="3" name="body" maxlength="240" required></textarea></td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="b_title_en">Title (English, optional)</label></th>
+						<td><input id="b_title_en" class="regular-text" dir="ltr" name="title_en" maxlength="80"></td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="b_body_en">Text (English, optional)</label></th>
+						<td><textarea id="b_body_en" class="large-text" rows="3" dir="ltr" name="body_en" maxlength="240"></textarea>
+						<p class="description">إذا كتبتها، يصل النص الإنجليزي للعملاء الذين يستخدمون التطبيق بالإنجليزي.</p></td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="b_pid">رقم المنتج (اختياري)</label></th>
@@ -369,11 +500,14 @@ class Dokan_App_Admin {
 	 * @param string $msg Msg key.
 	 * @param int    $n   Count.
 	 */
-	private static function back( $msg, $n = 0 ) {
+	private static function back( $msg, $n = 0, $tab = '' ) {
 		$args = array(
 			'page'          => self::SLUG,
 			'dokan_app_msg' => $msg,
 		);
+		if ( '' !== $tab ) {
+			$args['tab'] = $tab;
+		}
 		if ( $n ) {
 			$args['n'] = $n;
 		}
@@ -417,6 +551,26 @@ class Dokan_App_Admin {
 		$new['riyadh_cutoff']        = preg_match( '/^([01]\d|2[0-3]):[0-5]\d$/', $cut ) ? $cut : '15:00';
 		$new['delivery_note_riyadh'] = sanitize_textarea_field( $get( 'delivery_note_riyadh' ) );
 		$new['delivery_note_ksa']    = sanitize_textarea_field( $get( 'delivery_note_ksa' ) );
+		foreach ( array( 'delivery_note_extra', 'delivery_note_riyadh_en', 'delivery_note_ksa_en', 'delivery_note_extra_en', 'popular_searches', 'popular_searches_en', 'complaints_ar', 'complaints_en' ) as $tk ) {
+			$new[ $tk ] = sanitize_textarea_field( $get( $tk ) );
+		}
+		$new['sms_message_en']    = sanitize_text_field( $get( 'sms_message_en' ) );
+		$new['wa_language_en']    = preg_replace( '/[^A-Za-z_]/', '', $get( 'wa_language_en' ) );
+		$model                    = preg_replace( '/[^A-Za-z0-9.\-_]/', '', $get( 'claude_model' ) );
+		$new['claude_model']      = '' !== $model ? $model : Dokan_App_Claude::DEFAULT_MODEL;
+		$new['assistant_enabled'] = '1' === $get( 'assistant_enabled' );
+		$off                      = isset( $_POST['policy_off'] ) && is_array( $_POST['policy_off'] ) ? array_map( 'sanitize_key', array_keys( wp_unslash( $_POST['policy_off'] ) ) ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		foreach ( array_keys( Dokan_App_REST::policy_defs() ) as $pk ) {
+			$new[ 'policy_' . $pk ] = in_array( $pk, $off, true ) ? -1 : absint( $get( 'policy_' . $pk ) );
+		}
+		if ( ! empty( $_POST['claude_key_clear'] ) ) {
+			Dokan_App_Claude::save_key( '' );
+		} else {
+			$ck = isset( $_POST['claude_key'] ) ? preg_replace( '/[^A-Za-z0-9_\-]/', '', (string) wp_unslash( $_POST['claude_key'] ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+			if ( strlen( $ck ) >= 20 ) {
+				Dokan_App_Claude::save_key( $ck );
+			}
+		}
 		$ver                         = function ( $v ) {
 			return preg_match( '/^\d+(\.\d+){0,3}$/', $v ) ? $v : '1.0.0';
 		};
@@ -445,7 +599,7 @@ class Dokan_App_Admin {
 		$new['banners'] = $banners;
 
 		update_option( Dokan_App_Helpers::OPT_SETTINGS, $new, true );
-		delete_transient( 'dokan_app_config_cache' );
+		Dokan_App_REST::flush_config_cache();
 
 		$msg = 'saved';
 		if ( ! empty( $_POST['fcm_sa_clear'] ) ) {
@@ -465,6 +619,99 @@ class Dokan_App_Admin {
 			}
 		}
 		self::back( $msg );
+	}
+
+	/**
+	 * "بحث العملاء" tab: top searches, zero-result searches, index status.
+	 */
+	private static function render_search_tab() {
+		$top    = Dokan_App_Search::top_searches( 30, false, 30 );
+		$zero   = Dokan_App_Search::top_searches( 30, true, 30 );
+		$status = Dokan_App_Search::index_status();
+		$fmt    = function ( $ts ) {
+			return $ts ? wp_date( 'Y-m-d H:i', $ts ) : '—';
+		};
+		$table  = function ( $rows, $zero_col ) use ( $fmt ) {
+			if ( empty( $rows ) ) {
+				echo '<p>لا توجد بيانات بعد.</p>';
+				return;
+			}
+			echo '<table class="widefat striped" style="max-width:900px"><thead><tr><th>البحث</th><th>اللغة</th><th>عدد المرات</th><th>' . ( $zero_col ? 'بدون نتائج مطابقة' : 'منها بدون نتائج مطابقة' ) . '</th><th>آخر مرة</th></tr></thead><tbody>';
+			foreach ( $rows as $r ) {
+				echo '<tr><td>' . esc_html( $r['q'] ) . '</td><td>' . esc_html( $r['lang'] ) . '</td><td>' . (int) $r['count'] . '</td><td>' . (int) $r['zero'] . '</td><td>' . esc_html( $fmt( $r['last'] ) ) . '</td></tr>';
+			}
+			echo '</tbody></table>';
+		};
+		echo '<p class="description">ما يبحث عنه العملاء من التطبيق خلال آخر ٣٠ يومًا. "بدون نتائج مطابقة" تعني أن البحث لم يجد شيئًا أو عرض نتائج قريبة فقط — فرصة لإضافة منتج أو تحسين أسماء المنتجات.</p>';
+		echo '<h2>أكثر ٣٠ عملية بحث</h2>';
+		$table( $top, false );
+		echo '<h2>أكثر ٣٠ بحث بدون نتائج</h2>';
+		$table( $zero, true );
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" onsubmit="return confirm('سيتم مسح سجل البحث بالكامل. متابعة؟');" style="margin-top:12px">
+			<input type="hidden" name="action" value="dokan_app_clear_search_log">
+			<?php wp_nonce_field( 'dokan_app_clear_search_log' ); ?>
+			<?php submit_button( 'مسح', 'delete', 'submit', false ); ?>
+		</form>
+		<hr>
+		<h2>فهرس البحث</h2>
+		<table class="widefat striped" style="max-width:600px"><thead><tr><th>اللغة</th><th>المنتجات</th><th>العلامات التجارية</th><th>آخر بناء</th></tr></thead><tbody>
+		<?php foreach ( $status as $lang => $st ) : ?>
+			<tr><td><?php echo esc_html( $lang ); ?></td>
+			<?php if ( $st ) : ?>
+				<td><?php echo (int) $st['products']; ?></td><td><?php echo (int) $st['brands']; ?><?php echo $st['btax'] ? ' <code dir="ltr">' . esc_html( $st['btax'] ) . '</code>' : ''; ?></td><td><?php echo esc_html( $fmt( $st['built'] ) ); ?></td>
+			<?php else : ?>
+				<td colspan="3">لم يُبنَ بعد (يُبنى عند أول بحث)</td>
+			<?php endif; ?>
+			</tr>
+		<?php endforeach; ?>
+		</tbody></table>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:8px">
+			<input type="hidden" name="action" value="dokan_app_rebuild_search">
+			<?php wp_nonce_field( 'dokan_app_rebuild_search' ); ?>
+			<?php submit_button( 'إعادة بناء الفهرس الآن', 'secondary', 'submit', false ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Clear the search log.
+	 */
+	public static function clear_search_log() {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'ليس لديك صلاحية.', 'dokan-app' ), '', array( 'response' => 403 ) );
+		}
+		check_admin_referer( 'dokan_app_clear_search_log' );
+		Dokan_App_Search::clear_log();
+		Dokan_App_REST::flush_config_cache();
+		self::back( 'log_clear', 0, 'search' );
+	}
+
+	/**
+	 * Rebuild the search index now.
+	 */
+	public static function rebuild_search() {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'ليس لديك صلاحية.', 'dokan-app' ), '', array( 'response' => 403 ) );
+		}
+		check_admin_referer( 'dokan_app_rebuild_search' );
+		Dokan_App_Search::cron_rebuild();
+		self::back( 'reindexed', 0, 'search' );
+	}
+
+	/**
+	 * Test the Claude connection.
+	 */
+	public static function test_claude() {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'ليس لديك صلاحية.', 'dokan-app' ), '', array( 'response' => 403 ) );
+		}
+		check_admin_referer( 'dokan_app_test_claude' );
+		if ( '' === Dokan_App_Claude::api_key() ) {
+			self::back( 'claude_nok' );
+		}
+		$r = Dokan_App_Claude::test();
+		self::back( $r['ok'] ? 'claude_ok' : 'claude_bad', $r['ok'] ? 0 : (int) $r['code'] );
 	}
 
 	/**
@@ -488,7 +735,9 @@ class Dokan_App_Admin {
 		if ( $pid ) {
 			$data['product_id'] = (string) $pid;
 		}
-		$r = Dokan_App_Push::broadcast( $title, $body, $data );
+		$title_en = isset( $_POST['title_en'] ) ? sanitize_text_field( wp_unslash( $_POST['title_en'] ) ) : '';
+		$body_en  = isset( $_POST['body_en'] ) ? sanitize_textarea_field( wp_unslash( $_POST['body_en'] ) ) : '';
+		$r        = Dokan_App_Push::broadcast( $title, $body, $data, $title_en, $body_en );
 		self::back( 'sent', max( 0, (int) $r['sent'] ) );
 	}
 
@@ -508,7 +757,8 @@ class Dokan_App_Admin {
 		if ( ! $uid || empty( Dokan_App_Push::devices( $uid ) ) ) {
 			self::back( 'no_user' );
 		}
-		$n = Dokan_App_Push::send_to_user( $uid, 'إشعار تجريبي', 'هذا إشعار تجريبي من متجر دكان 🐾', array( 'type' => 'promo' ) );
+		$en = 'en' === Dokan_App_Helpers::user_lang( $uid );
+		$n  = Dokan_App_Push::send_to_user( $uid, $en ? 'Test notification' : 'إشعار تجريبي', $en ? 'This is a test notification from Dokan 🐾' : 'هذا إشعار تجريبي من متجر دكان 🐾', array( 'type' => 'promo' ) );
 		self::back( 'test_sent', $n );
 	}
 }

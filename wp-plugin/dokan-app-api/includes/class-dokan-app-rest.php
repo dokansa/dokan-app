@@ -49,7 +49,11 @@ class Dokan_App_REST {
 		if ( true !== $p ) {
 			return $p;
 		}
-		return Dokan_App_Auth::permission_user();
+		$r = Dokan_App_Auth::permission_user();
+		if ( true === $r ) {
+			Dokan_App_Helpers::remember_lang( get_current_user_id() );
+		}
+		return $r;
 	}
 
 	/**
@@ -77,10 +81,14 @@ class Dokan_App_REST {
 				'callback'            => array( __CLASS__, 'otp_request' ),
 				'permission_callback' => $pub,
 				'args'                => array(
-					'phone' => array(
+					'phone'   => array(
 						'required'          => true,
 						'type'              => 'string',
 						'sanitize_callback' => 'sanitize_text_field',
+					),
+					'channel' => array(
+						'type'              => 'string',
+						'sanitize_callback' => 'sanitize_key',
 					),
 				),
 			)
@@ -279,6 +287,69 @@ class Dokan_App_REST {
 				),
 			)
 		);
+
+		// v1.1.
+		register_rest_route(
+			$ns,
+			'/search',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'search' ),
+				'permission_callback' => $pub,
+				'args'                => array(
+					'q'        => array(
+						'required'          => true,
+						'type'              => 'string',
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+					'pet_id'   => array(
+						'type'              => 'string',
+						'sanitize_callback' => array( 'Dokan_App_Pets', 'clean_id' ),
+					),
+					'ai'       => array(
+						'default'           => '0',
+						'sanitize_callback' => 'rest_sanitize_boolean',
+					),
+					'log'      => array(
+						'default'           => '0',
+						'sanitize_callback' => 'rest_sanitize_boolean',
+					),
+					'per_page' => array(
+						'default'           => 40,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/assistant',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'assistant' ),
+				'permission_callback' => $pub,
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/me/purchased',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'me_purchased' ),
+				'permission_callback' => $auth,
+			)
+		);
+
+		// v1.2.
+		register_rest_route(
+			$ns,
+			'/pages/(?P<id>\d+)',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'page' ),
+				'permission_callback' => $pub,
+			)
+		);
 	}
 
 	/**
@@ -326,12 +397,21 @@ class Dokan_App_REST {
 	public static function config() {
 		return self::safe(
 			function () {
-				$cached = get_transient( 'dokan_app_config_cache_' . DOKAN_APP_VERSION );
-				if ( ! is_array( $cached ) ) {
+				$cache_key = self::config_cache_key();
+				$cached    = get_transient( $cache_key );
+				if ( ! is_array( $cached ) || ! isset( $cached['pet_categories'] ) ) {
+					$cats   = self::config_categories();
+					$names  = array();
+					foreach ( $cats as $cat ) {
+						$names[] = $cat['name'];
+					}
 					$cached = array(
-						'categories' => self::config_categories(),
+						'categories'       => $cats,
+						'pet_categories'   => Dokan_App_Search::pet_categories( $cats ),
+						'popular_searches' => Dokan_App_Search::popular_searches( $names ),
+						'policies'         => self::policies(),
 					);
-					set_transient( 'dokan_app_config_cache_' . DOKAN_APP_VERSION, $cached, 10 * MINUTE_IN_SECONDS );
+					set_transient( $cache_key, $cached, 10 * MINUTE_IN_SECONDS );
 				}
 
 				$banners = array();
@@ -349,8 +429,8 @@ class Dokan_App_REST {
 					'store_name'           => wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ),
 					'currency'             => function_exists( 'get_woocommerce_currency' ) ? get_woocommerce_currency() : 'SAR',
 					'riyadh_cutoff'        => (string) Dokan_App_Helpers::setting( 'riyadh_cutoff' ),
-					'delivery_note_riyadh' => (string) Dokan_App_Helpers::setting( 'delivery_note_riyadh' ),
-					'delivery_note_ksa'    => (string) Dokan_App_Helpers::setting( 'delivery_note_ksa' ),
+					'delivery_note_riyadh' => (string) Dokan_App_Helpers::setting_l( 'delivery_note_riyadh' ),
+					'delivery_note_ksa'    => (string) Dokan_App_Helpers::setting_l( 'delivery_note_ksa' ),
 					'whatsapp'             => (string) Dokan_App_Helpers::setting( 'whatsapp' ),
 					'chatwoot'             => array(
 						'base_url'      => untrailingslashit( (string) Dokan_App_Helpers::setting( 'chatwoot_base_url' ) ),
@@ -363,10 +443,289 @@ class Dokan_App_REST {
 						'ios'     => (string) Dokan_App_Helpers::setting( 'min_ios' ),
 						'android' => (string) Dokan_App_Helpers::setting( 'min_android' ),
 					),
+					// v1.1.
+					'popular_searches'     => array_values( (array) $cached['popular_searches'] ),
+					'pet_categories'       => (object) $cached['pet_categories'],
+					'assistant_enabled'    => Dokan_App_Claude::enabled(),
+					// v1.2.
+					'otp_channels'         => Dokan_App_OTP::channels(),
+					'policies'             => array_values( (array) $cached['policies'] ),
 				);
 				$res = rest_ensure_response( apply_filters( 'dokan_app_config', $out ) );
 				$res->header( 'Cache-Control', 'public, max-age=300' );
 				return $res;
+			}
+		);
+	}
+
+	/**
+	 * Config cache key (per version and language).
+	 *
+	 * @param string|null $lang Lang.
+	 * @return string
+	 */
+	public static function config_cache_key( $lang = null ) {
+		return 'dokan_app_config_cache_' . DOKAN_APP_VERSION . '_' . ( null === $lang ? Dokan_App_Helpers::lang() : $lang );
+	}
+
+	/**
+	 * Delete the cached config for every language.
+	 */
+	public static function flush_config_cache() {
+		delete_transient( 'dokan_app_config_cache' );
+		delete_transient( 'dokan_app_config_cache_' . DOKAN_APP_VERSION );
+		foreach ( Dokan_App_Helpers::languages() as $l ) {
+			delete_transient( self::config_cache_key( $l ) );
+		}
+	}
+
+	/* ------------------------------------------------------------------
+	 * Policies (v1.2)
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * Policy definitions: titles, default slugs, WP option holding a page id.
+	 *
+	 * @return array
+	 */
+	public static function policy_defs() {
+		return apply_filters(
+			'dokan_app_policy_defs',
+			array(
+				'privacy'  => array(
+					'title'  => array( 'سياسة الخصوصية', 'Privacy policy' ),
+					'slugs'  => array( 'privacy-policy', 'privacy', 'سياسة-الخصوصية', 'الخصوصية' ),
+					'option' => 'wp_page_for_privacy_policy',
+				),
+				'returns'  => array(
+					'title'  => array( 'سياسة الاسترجاع والاستبدال', 'Returns & refunds' ),
+					'slugs'  => array( 'refund_returns', 'return-policy', 'returns', 'refund-policy', 'سياسة-الاسترجاع', 'سياسة-الاستبدال-والاسترجاع', 'الاسترجاع-والاستبدال', 'الاسترجاع' ),
+					'option' => '',
+				),
+				'shipping' => array(
+					'title'  => array( 'سياسة الشحن والتوصيل', 'Shipping policy' ),
+					'slugs'  => array( 'shipping', 'shipping-policy', 'سياسة-الشحن', 'الشحن-والتوصيل', 'الشحن' ),
+					'option' => '',
+				),
+				'terms'    => array(
+					'title'  => array( 'الشروط والأحكام', 'Terms & conditions' ),
+					'slugs'  => array( 'terms', 'terms-and-conditions', 'الشروط-والأحكام', 'الشروط-والاحكام' ),
+					'option' => 'woocommerce_terms_page_id',
+				),
+			)
+		);
+	}
+
+	/**
+	 * Page id for a policy (setting, else auto-detected), not yet translated. 0 = none.
+	 *
+	 * @param string $key Policy key.
+	 * @return int
+	 */
+	public static function policy_page( $key ) {
+		$defs = self::policy_defs();
+		if ( ! isset( $defs[ $key ] ) ) {
+			return 0;
+		}
+		$set = (int) Dokan_App_Helpers::setting( 'policy_' . $key );
+		if ( $set < 0 ) {
+			return 0;
+		}
+		if ( $set > 0 ) {
+			return 'publish' === get_post_status( $set ) ? $set : 0;
+		}
+		if ( '' !== $defs[ $key ]['option'] ) {
+			$id = (int) get_option( $defs[ $key ]['option'], 0 );
+			if ( $id > 0 && 'publish' === get_post_status( $id ) ) {
+				return $id;
+			}
+		}
+		foreach ( $defs[ $key ]['slugs'] as $slug ) {
+			$p = get_page_by_path( $slug, OBJECT, 'page' );
+			if ( $p && 'publish' === $p->post_status ) {
+				return (int) $p->ID;
+			}
+		}
+		return 0;
+	}
+
+	/**
+	 * Page in the request language (Polylang translation when it exists).
+	 *
+	 * @param int $id Page id.
+	 * @return int
+	 */
+	private static function translated_page( $id ) {
+		if ( $id > 0 && function_exists( 'pll_get_post' ) ) {
+			$tr = (int) pll_get_post( $id, Dokan_App_Helpers::lang() );
+			if ( $tr > 0 && 'publish' === get_post_status( $tr ) ) {
+				return $tr;
+			}
+		}
+		return $id;
+	}
+
+	/**
+	 * Policies for /config.
+	 *
+	 * @return array
+	 */
+	private static function policies() {
+		$out = array();
+		foreach ( self::policy_defs() as $key => $def ) {
+			$pid = self::translated_page( self::policy_page( $key ) );
+			if ( $pid < 1 ) {
+				continue;
+			}
+			$out[] = array(
+				'key'          => $key,
+				'title'        => Dokan_App_Helpers::t( $def['title'][0], $def['title'][1] ),
+				'page_id'      => $pid,
+				'content_html' => null,
+			);
+		}
+		$text = trim( (string) Dokan_App_Helpers::setting( Dokan_App_Helpers::is_en() ? 'complaints_en' : 'complaints_ar' ) );
+		if ( '' === $text ) {
+			$text = trim( (string) Dokan_App_Helpers::setting( 'complaints_ar' ) );
+		}
+		if ( '' !== $text ) {
+			$out[] = array(
+				'key'          => 'complaints',
+				'title'        => Dokan_App_Helpers::t( 'الشكاوى والإلغاء', 'Complaints & cancellation' ),
+				'page_id'      => null,
+				'content_html' => wp_kses_post( wpautop( esc_html( $text ) ) ),
+			);
+		}
+		return apply_filters( 'dokan_app_policies', $out );
+	}
+
+	/**
+	 * Is the page one of the policy pages (any language)?
+	 *
+	 * @param int $id Page id.
+	 * @return bool
+	 */
+	private static function is_policy_page( $id ) {
+		foreach ( array_keys( self::policy_defs() ) as $key ) {
+			$pid = self::policy_page( $key );
+			if ( $pid < 1 ) {
+				continue;
+			}
+			$ids = array( $pid );
+			if ( function_exists( 'pll_get_post_translations' ) ) {
+				$ids = array_merge( $ids, array_map( 'intval', (array) pll_get_post_translations( $pid ) ) );
+			}
+			if ( in_array( (int) $id, $ids, true ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * GET /pages/<id>.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function page( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$id = absint( $request['id'] );
+				if ( $id < 1 || ! self::is_policy_page( $id ) ) {
+					return Dokan_App_Helpers::error( 'dokan_app_page_not_found', 'الصفحة غير موجودة.', 404 );
+				}
+				$pid  = self::translated_page( $id );
+				$post = get_post( $pid );
+				if ( ! $post || 'publish' !== $post->post_status ) {
+					return Dokan_App_Helpers::error( 'dokan_app_page_not_found', 'الصفحة غير موجودة.', 404 );
+				}
+				$content = apply_filters( 'the_content', $post->post_content ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals
+				$res     = rest_ensure_response(
+					array(
+						'id'           => (int) $post->ID,
+						'title'        => wp_specialchars_decode( get_the_title( $post ), ENT_QUOTES ),
+						'content_html' => wp_kses_post( (string) $content ),
+					)
+				);
+				$res->header( 'Cache-Control', 'public, max-age=600' );
+				return $res;
+			}
+		);
+	}
+
+	/* ------------------------------------------------------------------
+	 * Search / assistant / purchased (v1.1)
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * Pet of the current user from a pet_id, or null (auth optional: guests get null).
+	 *
+	 * @param string $pet_id Pet id.
+	 * @return array|null
+	 */
+	private static function request_pet( $pet_id ) {
+		$pet_id = Dokan_App_Pets::clean_id( $pet_id );
+		$uid    = get_current_user_id();
+		if ( '' === $pet_id || ! $uid ) {
+			return null;
+		}
+		return Dokan_App_Pets::get( $uid, $pet_id );
+	}
+
+	/**
+	 * GET /search.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function search( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$per = (int) $request->get_param( 'per_page' );
+				return Dokan_App_Search::search_response(
+					(string) $request->get_param( 'q' ),
+					self::request_pet( (string) $request->get_param( 'pet_id' ) ),
+					(bool) $request->get_param( 'ai' ),
+					(bool) $request->get_param( 'log' ),
+					$per > 0 ? $per : 40
+				);
+			}
+		);
+	}
+
+	/**
+	 * POST /assistant.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function assistant( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$body     = self::body( $request );
+				$messages = Dokan_App_Claude::clean_messages( isset( $body['messages'] ) ? $body['messages'] : null );
+				if ( is_wp_error( $messages ) ) {
+					return $messages;
+				}
+				if ( ! Dokan_App_Search::rate_ok( 'as', 30 ) ) {
+					return Dokan_App_Helpers::error( 'dokan_app_rate_limited', 'وصلت للحد المسموح من الرسائل، حاول بعد شوي.', 429 );
+				}
+				$pet = self::request_pet( isset( $body['pet_id'] ) && is_scalar( $body['pet_id'] ) ? (string) $body['pet_id'] : '' );
+				return Dokan_App_Claude::assistant( $messages, $pet );
+			}
+		);
+	}
+
+	/**
+	 * GET /me/purchased.
+	 *
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function me_purchased() {
+		return self::safe(
+			function () {
+				return Dokan_App_Orders::purchased_ids( get_current_user_id() );
 			}
 		);
 	}
@@ -419,7 +778,7 @@ class Dokan_App_REST {
 		);
 		// The store runs Polylang (Arabic + English copies): the app shows the Arabic ones.
 		if ( function_exists( 'pll_languages_list' ) ) {
-			$args['lang'] = apply_filters( 'dokan_app_language', 'ar' );
+			$args['lang'] = apply_filters( 'dokan_app_language', Dokan_App_Helpers::lang() );
 		}
 		$terms = get_terms( $args );
 		$out   = array();
@@ -472,7 +831,7 @@ class Dokan_App_REST {
 	public static function otp_request( $request ) {
 		return self::safe(
 			function () use ( $request ) {
-				return Dokan_App_OTP::request( (string) $request->get_param( 'phone' ) );
+				return Dokan_App_OTP::request( (string) $request->get_param( 'phone' ), (string) $request->get_param( 'channel' ) );
 			}
 		);
 	}
@@ -542,9 +901,17 @@ class Dokan_App_REST {
 					return $token;
 				}
 				delete_transient( $rl_key );
+				$linked = 0;
+				try {
+					$linked = Dokan_App_Orders::link_guest_orders( $user->ID );
+				} catch ( \Throwable $e ) {
+					Dokan_App_Helpers::log( 'link guest orders error: ' . $e->getMessage() );
+				}
+				Dokan_App_Helpers::remember_lang( $user->ID );
 				return array(
-					'token' => $token,
-					'user'  => Dokan_App_Helpers::user_shape( $user ),
+					'token'         => $token,
+					'user'          => Dokan_App_Helpers::user_shape( $user ),
+					'linked_orders' => $linked,
 				);
 			}
 		);
