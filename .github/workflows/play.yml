@@ -1,0 +1,80 @@
+# Google Play build of the live app (com.dokansa.myDokansa), connected to dokansa.com.
+# Produces an UNSIGNED-for-Play app bundle (debug-signed); it is signed with the upload key
+# outside this public repo, then uploaded to Play Console.
+name: Google Play build
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "version name"
+        default: "6.0.0"
+      build:
+        description: "version code (must be above 33)"
+        default: "40"
+permissions:
+  contents: write
+jobs:
+  aab:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+        shell: bash
+    env:
+      STORE_URL: https://dokansa.com
+      SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
+      VNAME: ${{ github.event.inputs.version }}
+      VCODE: ${{ github.event.inputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Set up Shorebird
+        if: env.SHOREBIRD_TOKEN != ''
+        uses: shorebirdtech/setup-shorebird@v1
+        with:
+          cache: true
+      - name: Android project for the Play app
+        run: |
+          flutter create --org com.dokansa --project-name dokan_app --platforms android .
+          rm -rf test
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' "$MANIFEST" || \
+            perl -0pi -e 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>\n    <application#' "$MANIFEST"
+          perl -pi -e 's#android:label="[^"]*"#android:label="دكان السعودية"#' "$MANIFEST"
+          GRADLE=$(ls android/app/build.gradle* | head -1)
+          perl -pi -e 's/minSdk(Version)?\s*=?\s*flutter\.minSdkVersion/minSdk = 23/' "$GRADLE"
+          perl -pi -e 's/targetSdk(Version)?\s*=?\s*flutter\.targetSdkVersion/targetSdk = 36/' "$GRADLE"
+          perl -pi -e 's/applicationId\s*=?\s*"[^"]+"/applicationId = "com.dokansa.myDokansa"/' "$GRADLE"
+          bash android_compile_sdk_fix.sh
+          for s in chinese devanagari japanese korean; do echo "-dontwarn com.google.mlkit.vision.text.$s.**" >> android/app/proguard-rules.pro; done
+          grep -q "proguard-rules.pro" "$GRADLE" || perl -0pi -e 's/(release\s*\{)/$1\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")/' "$GRADLE"
+          grep -nE "applicationId|targetSdk|minSdk|compileSdk" "$GRADLE"
+      - run: flutter pub get
+      - name: App icon
+        continue-on-error: true
+        run: dart run flutter_launcher_icons -f flutter_launcher_icons_android.yaml
+      - name: Build app bundle
+        run: |
+          set -o pipefail
+          DEFINES="--dart-define=STORE_URL=$STORE_URL --dart-define=FIREBASE_APP_ID=${{ vars.FIREBASE_APP_ID_PLAY }}"
+          perl -pi -e "s/^version: .*/version: $VNAME+$VCODE/" pubspec.yaml
+          if [ -n "$SHOREBIRD_TOKEN" ]; then
+            shorebird release android --artifact=aab -- $DEFINES 2>&1 | tee build.log
+          else
+            flutter build appbundle --release $DEFINES 2>&1 | tee build.log
+          fi || { { grep -A25 "What went wrong" build.log; grep -E "^e: |error:|FAILURE" build.log; grep -v '^\s*$' build.log | tail -8; } | head -60 | sed 's/^/::error title=build::/'; exit 1; }
+          ls -la build/app/outputs/bundle/release/
+      - name: Publish bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp build/app/outputs/bundle/release/app-release.aab dokan-play-$VNAME-$VCODE.aab
+          gh release view play >/dev/null 2>&1 || gh release create play --prerelease --title "Google Play" --notes "حزم Google Play (تحتاج توقيع بمفتاح التحميل قبل الرفع)."
+          gh release upload play dokan-play-$VNAME-$VCODE.aab --clobber
