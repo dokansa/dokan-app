@@ -66,7 +66,11 @@ class HomeScreen extends ConsumerWidget {
                               : _greeting(context),
                           style: const TextStyle(fontSize: 14, color: C.muted),
                         ),
-                        Text(context.tr('دكان', 'Dokan'), style: display(26, weight: FontWeight.w700)),
+                        const SizedBox(height: 4),
+                        Semantics(
+                          label: context.tr('دكان السعودية', 'Dokan Saudi'),
+                          child: Image.asset('assets/brand/wordmark-2026.png', height: 46, filterQuality: FilterQuality.high),
+                        ),
                       ],
                     ),
                   ),

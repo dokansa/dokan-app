@@ -139,7 +139,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(24, 8, 24, 40),
         children: [
-          const CircleAvatar(radius: 34, backgroundColor: C.peach, child: Icon(Icons.pets_rounded, color: C.accentText, size: 32)),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Image.asset('assets/brand/logo_circle.png', width: 84, height: 84, filterQuality: FilterQuality.high),
+          ),
           const SizedBox(height: 18),
           Text(_sent ? context.tr('اكتب الرمز', 'Enter the code') : context.tr('أهلاً في دكان', 'Welcome to Dokan'),
               style: display(26, weight: FontWeight.w700)),
