@@ -1,0 +1,19 @@
+name: Fetch brand assets from dokansa.com
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          mkdir -p app/assets/brand
+          get() { curl -fsSL -A "Mozilla/5.0" -o "app/assets/brand/$1" "$2" && echo "ok $1" || echo "fail $1"; }
+          get icon-2026-300.png "https://dokansa.com/wp-content/uploads/dokansa-design-20261007/2026/10/dokansa-browser-icon-300x300.png"
+          get icon-512.png "https://dokansa.com/wp-content/uploads/2023/07/cropped-%D8%A7%D9%84%D8%B4%D8%B9%D8%A7%D8%B1-%D8%A7%D9%84%D8%B5%D8%BA%D9%8A%D8%B1-150x150-1.png"
+          get wordmark-2026.png "https://dokansa.com/wp-content/uploads/dokansa-design-20261007/2026/10/%D8%B4%D8%B9%D8%A7%D8%B1-%D8%AF%D9%83%D8%A7%D9%86-%D8%A7%D9%84%D8%B3%D8%B9%D9%88%D8%AF%D9%8A%D8%A9.png"
+          get wordmark-2023.png "https://dokansa.com/wp-content/uploads/2023/07/%D8%B4%D8%B9%D8%A7%D8%B1%D8%B1%D8%AA%DB%8C%D9%86%D8%A7.png"
+          file app/assets/brand/*
+          git config user.name "dokan-ci"; git config user.email "dokansa36@gmail.com"
+          git add app/assets/brand && git commit -m "Brand assets from dokansa.com [skip ci]" && git push || true
