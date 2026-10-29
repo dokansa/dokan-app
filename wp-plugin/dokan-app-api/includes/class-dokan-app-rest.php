@@ -496,21 +496,25 @@ class Dokan_App_REST {
 					'title'  => array( 'سياسة الخصوصية', 'Privacy policy' ),
 					'slugs'  => array( 'privacy-policy', 'privacy', 'سياسة-الخصوصية', 'الخصوصية' ),
 					'option' => 'wp_page_for_privacy_policy',
+					'words'  => array( 'الخصوصية', 'Privacy' ),
 				),
 				'returns'  => array(
 					'title'  => array( 'سياسة الاسترجاع والاستبدال', 'Returns & refunds' ),
-					'slugs'  => array( 'refund_returns', 'return-policy', 'returns', 'refund-policy', 'سياسة-الاسترجاع', 'سياسة-الاستبدال-والاسترجاع', 'الاسترجاع-والاستبدال', 'الاسترجاع' ),
+					'slugs'  => array( 'refund_returns', 'return-policy', 'returns', 'refund-policy', 'سياسة-الاسترجاع', 'سياسة-الاستبدال-والاسترجاع', 'الاسترجاع-والاستبدال', 'الاسترجاع', 'سياسة-الإرجاع-والالغاء', 'سياسة-الارجاع-والالغاء' ),
 					'option' => '',
+					'words'  => array( 'سياسة الإرجاع', 'سياسة الارجاع', 'الاسترجاع', 'الاستبدال', 'Return' ),
 				),
 				'shipping' => array(
 					'title'  => array( 'سياسة الشحن والتوصيل', 'Shipping policy' ),
-					'slugs'  => array( 'shipping', 'shipping-policy', 'سياسة-الشحن', 'الشحن-والتوصيل', 'الشحن' ),
+					'slugs'  => array( 'shipping', 'shipping-policy', 'سياسة-الشحن', 'الشحن-والتوصيل', 'الشحن-و-التوصيل', 'الشحن' ),
 					'option' => '',
+					'words'  => array( 'الشحن', 'التوصيل', 'Shipping' ),
 				),
 				'terms'    => array(
 					'title'  => array( 'الشروط والأحكام', 'Terms & conditions' ),
 					'slugs'  => array( 'terms', 'terms-and-conditions', 'الشروط-والأحكام', 'الشروط-والاحكام' ),
 					'option' => 'woocommerce_terms_page_id',
+					'words'  => array( 'الشروط', 'Terms' ),
 				),
 			)
 		);
@@ -545,6 +549,49 @@ class Dokan_App_REST {
 			if ( $p && 'publish' === $p->post_status ) {
 				return (int) $p->ID;
 			}
+		}
+		// Last resort: a published page whose title names the policy (Arabic store titles
+		// like «سياسة الإرجاع والالغاء» or «الشحن و التوصيل»), Arabic copy first.
+		$words = isset( $defs[ $key ]['words'] ) ? (array) $defs[ $key ]['words'] : array();
+		if ( $words ) {
+			$cache_key = 'dokan_app_policy_guess_' . $key;
+			$cached    = get_transient( $cache_key );
+			if ( false !== $cached ) {
+				return 'publish' === get_post_status( (int) $cached ) ? (int) $cached : 0;
+			}
+			$args = array(
+				'post_type'        => 'page',
+				'post_status'      => 'publish',
+				'posts_per_page'   => 200,
+				'orderby'          => 'date',
+				'order'            => 'ASC',
+				'suppress_filters' => true,
+				'fields'           => 'ids',
+			);
+			if ( function_exists( 'pll_languages_list' ) ) {
+				$args['lang'] = '';
+			}
+			$found = 0;
+			foreach ( get_posts( $args ) as $pid ) {
+				$title = (string) get_the_title( $pid );
+				if ( false !== mb_strpos( $title, 'نموذج' ) || false !== stripos( $title, 'form' ) ) {
+					continue; // e.g. «نموذج الارجاع» is a form, not the policy.
+				}
+				foreach ( $words as $w ) {
+					if ( false !== mb_stripos( $title, $w ) ) {
+						$found = (int) $pid;
+						break 2;
+					}
+				}
+			}
+			if ( $found && function_exists( 'pll_get_post' ) ) {
+				$ar = (int) pll_get_post( $found, 'ar' );
+				if ( $ar > 0 ) {
+					$found = $ar;
+				}
+			}
+			set_transient( $cache_key, $found, HOUR_IN_SECONDS );
+			return $found;
 		}
 		return 0;
 	}
