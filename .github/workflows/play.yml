@@ -63,7 +63,7 @@ jobs:
       - name: Build app bundle
         run: |
           set -o pipefail
-          DEFINES="--dart-define=STORE_URL=$STORE_URL --dart-define=FIREBASE_APP_ID=${{ vars.FIREBASE_APP_ID_PLAY }}"
+          DEFINES="--dart-define=STORE_URL=$STORE_URL --dart-define=FIREBASE_APP_ID=1:917838520906:android:520d4ce1cb0515ce33fcb3"
           perl -pi -e "s/^version: .*/version: $VNAME+$VCODE/" pubspec.yaml
           if [ -n "$SHOREBIRD_TOKEN" ]; then
             shorebird release android --artifact=aab -- $DEFINES 2>&1 | tee build.log
