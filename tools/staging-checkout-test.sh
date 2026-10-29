@@ -34,7 +34,7 @@ try() {
   echo "$R" | jq -e '.order_id' >/dev/null 2>&1
 }
 
-BASEADDR='{"first_name":"تجربة","last_name":"التطبيق","address_1":"شارع تجربة 22","city":"الرياض","country":"SA","state":"","postcode":"","phone":"0500000123"}'
+BASEADDR='{"first_name":"تجربة","last_name":"","address_1":"شارع تجربة 22","city":"الرياض","country":"SA","state":"","postcode":"","phone":"0500000123"}'
 CART=$(S "$BASE/wp-json/wc/store/v1/cart")
 note "payment methods: $(echo "$CART" | jq -c '.payment_methods') · shipping: $(echo "$CART" | jq -c '[.shipping_rates[].shipping_rates[] | {id:.rate_id,price,selected}]')"
 

@@ -112,7 +112,7 @@ class Dokan_App_Store_API {
 
 	public static function relax_address_fields( $fields ) {
 		if ( Dokan_App_Helpers::is_app_request() ) {
-			foreach ( array( 'postcode', 'state' ) as $k ) {
+			foreach ( array( 'postcode', 'state', 'last_name' ) as $k ) {
 				if ( isset( $fields[ $k ] ) ) {
 					$fields[ $k ]['required'] = false;
 				}
@@ -124,7 +124,7 @@ class Dokan_App_Store_API {
 	public static function relax_prefixed_fields( $fields ) {
 		if ( Dokan_App_Helpers::is_app_request() && is_array( $fields ) ) {
 			foreach ( $fields as $k => $f ) {
-				if ( preg_match( '/_(postcode|state)$/', (string) $k ) ) {
+				if ( preg_match( '/_(postcode|state|last_name)$/', (string) $k ) ) {
 					$fields[ $k ]['required'] = false;
 				}
 			}
@@ -134,7 +134,7 @@ class Dokan_App_Store_API {
 
 	public static function relax_locale( $locale ) {
 		if ( Dokan_App_Helpers::is_app_request() && is_array( $locale ) ) {
-			foreach ( array( 'postcode', 'state' ) as $k ) {
+			foreach ( array( 'postcode', 'state', 'last_name' ) as $k ) {
 				$locale['SA'][ $k ]['required'] = false;
 			}
 		}
