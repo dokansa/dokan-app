@@ -50,6 +50,7 @@ jobs:
           # Test builds install next to the live Play app (com.dokansa.shop).
           perl -pi -e 's/applicationId\s*=?\s*"[^"]+"/applicationId = "com.dokansa.shop.test"/' "$GRADLE"
           grep -n "applicationId\|minSdk" "$GRADLE"
+          bash android_compile_sdk_fix.sh
 
       - run: flutter pub get
 

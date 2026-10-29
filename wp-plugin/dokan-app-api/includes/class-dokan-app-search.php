@@ -2535,6 +2535,18 @@ class Dokan_App_Search {
 			);
 		}
 
+		// Match what the store shows: when out-of-stock products are hidden on the site,
+		// leave them out of results and counts too (the app lists only in-stock products).
+		if ( 'yes' === get_option( 'woocommerce_hide_out_of_stock_items' ) || apply_filters( 'dokan_app_search_instock_only', true ) ) {
+			$rows = array_values(
+				array_filter(
+					$rows,
+					function ( $r ) {
+						return $r['i'] > 0;
+					}
+				)
+			);
+		}
 		$full   = function ( $r ) use ( $nk, $has_brand, $nh ) {
 			return $r['kh'] === $nk && ( ! $has_brand || $r['bh'] ) && $r['sh'] && $r['hh'] === $nh;
 		};

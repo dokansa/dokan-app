@@ -17,6 +17,7 @@ perl -pi -e 's#android:label="[^"]*"#android:label="دكان"#' "$MANIFEST"
 # Firebase needs minSdk 23.
 GRADLE=$(ls android/app/build.gradle* | head -1)
 perl -pi -e 's/minSdk(Version)?\s*=?\s*flutter\.minSdkVersion/minSdk = 23/' "$GRADLE"
+bash android_compile_sdk_fix.sh
 
 # ---------- iOS
 PLIST=ios/Runner/Info.plist
