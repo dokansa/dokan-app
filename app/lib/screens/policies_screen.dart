@@ -125,7 +125,38 @@ class _Html extends StatelessWidget {
         decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(R.card)),
         child: HtmlWidget(
           html,
-          textStyle: const TextStyle(fontSize: 15, height: 1.7, color: C.ink),
+          textStyle: const TextStyle(fontSize: 15, height: 1.75, color: C.ink),
+          customStylesBuilder: (e) {
+            switch (e.localName) {
+              case 'h1':
+              case 'h2':
+                return {'color': '#0E4A43', 'font-size': '19px', 'font-weight': '700', 'margin': '20px 0 8px', 'line-height': '1.4'};
+              case 'h3':
+              case 'h4':
+                return {'color': '#13201F', 'font-size': '16px', 'font-weight': '700', 'margin': '14px 0 6px'};
+              case 'p':
+                return {'margin': '0 0 10px'};
+              case 'ul':
+              case 'ol':
+                return {'margin': '4px 0 12px', 'padding-inline-start': '20px'};
+              case 'li':
+                return {'margin': '0 0 6px'};
+              case 'strong':
+              case 'b':
+                return {'color': '#13201F', 'font-weight': '700'};
+              case 'hr':
+                return {'margin': '16px 0', 'border-top': '1px solid #EDEBE4'};
+              case 'table':
+                return {'border': '1px solid #EDEBE4', 'border-collapse': 'collapse', 'margin': '8px 0 14px', 'width': '100%'};
+              case 'th':
+                return {'background-color': '#DCEBE6', 'padding': '8px', 'border': '1px solid #EDEBE4', 'font-weight': '700'};
+              case 'td':
+                return {'padding': '8px', 'border': '1px solid #EDEBE4'};
+              case 'a':
+                return {'color': '#0E4A43', 'text-decoration': 'underline'};
+            }
+            return null;
+          },
           onTapUrl: (url) => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
         ),
       ),

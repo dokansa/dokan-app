@@ -484,6 +484,41 @@ class Dokan_App_REST {
 	 * ------------------------------------------------------------------ */
 
 	/**
+	 * Page HTML made readable in the app: the site's pages carry their own <style> blocks,
+	 * icon-font tags and layout classes, which come out as raw CSS text in a phone view.
+	 * Keep only the content (headings, paragraphs, lists, tables, links, emphasis).
+	 *
+	 * @param string $html Rendered page content.
+	 * @return string
+	 */
+	public static function clean_page_html( $html ) {
+		// Whole blocks that are never content.
+		$html = preg_replace( '#<(style|script|noscript|svg|form|iframe|button|select|textarea)\b[^>]*>.*?</\1>#is', '', $html );
+		$html = preg_replace( '#<link\b[^>]*>#i', '', $html );
+		// Icon-font tags (<i class="fa ..."></i>) are empty boxes outside the website.
+		$html = preg_replace( '#<i\b[^>]*class="[^"]*(fa|icon|dashicons)[^"]*"[^>]*>\s*</i>#i', '', $html );
+		$allowed = array(
+			'h1' => array(), 'h2' => array(), 'h3' => array(), 'h4' => array(), 'h5' => array(), 'h6' => array(),
+			'p' => array(), 'br' => array(), 'hr' => array(), 'div' => array(), 'span' => array(), 'section' => array(),
+			'strong' => array(), 'b' => array(), 'em' => array(), 'i' => array(), 'u' => array(), 'small' => array(),
+			'ul' => array(), 'ol' => array(), 'li' => array(),
+			'table' => array(), 'thead' => array(), 'tbody' => array(), 'tr' => array(), 'th' => array(), 'td' => array(),
+			'blockquote' => array(),
+			'a' => array( 'href' => true ),
+			'img' => array( 'src' => true, 'alt' => true ),
+		);
+		$html = wp_kses( $html, $allowed ); // drops style/class/id attributes and anything else
+		// Any CSS left as plain text (e.g. from a page builder) — remove "selector { prop: value; }" runs.
+		$html = preg_replace( '#(^|>)([^<]*?\{[^<{}]*:[^<{}]*\}\s*)+#u', '$1', $html );
+		// Tidy: drop empty wrappers and repeated breaks.
+		for ( $i = 0; $i < 3; $i++ ) {
+			$html = preg_replace( '#<(div|span|p|section|strong|b|em|small)>\s*(&nbsp;|\x{00A0})*\s*</\1>#u', '', $html );
+		}
+		$html = preg_replace( '#(<br\s*/?>\s*){3,}#i', '<br><br>', $html );
+		return trim( (string) $html );
+	}
+
+	/**
 	 * Policy definitions: titles, default slugs, WP option holding a page id.
 	 *
 	 * @return array
@@ -692,7 +727,7 @@ class Dokan_App_REST {
 					array(
 						'id'           => (int) $post->ID,
 						'title'        => wp_specialchars_decode( get_the_title( $post ), ENT_QUOTES ),
-						'content_html' => wp_kses_post( (string) $content ),
+						'content_html' => self::clean_page_html( (string) $content ),
 					)
 				);
 				$res->header( 'Cache-Control', 'public, max-age=600' );
