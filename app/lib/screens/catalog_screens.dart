@@ -129,98 +129,127 @@ class _SubPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final subs = ref.watch(subcategoriesProvider(category.id));
-    return CustomScrollView(
-      slivers: [
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-            child: Material(
-              color: C.primary,
-              borderRadius: BorderRadius.circular(18),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(18),
-                onTap: () => _open(context, category),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(category.name, style: display(17, color: Colors.white)),
-                            Text(
-                              context.tr('تسوّق الكل · ${category.count} منتج', 'Shop all · ${category.count} products'),
-                              style: const TextStyle(fontSize: 12, color: Color(0xFFCFE3DD)),
-                            ),
-                          ],
+    final tree = ref.watch(categoryTreeProvider);
+    final header = SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+        child: Material(
+          color: C.primary,
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () => _open(context, category),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(category.name, style: display(17, color: Colors.white)),
+                        Text(
+                          context.tr('تسوّق الكل · ${category.count} منتج', 'Shop all · ${category.count} products'),
+                          style: const TextStyle(fontSize: 12, color: Color(0xFFCFE3DD)),
                         ),
-                      ),
-                      const Icon(Icons.chevron_right_rounded, color: Colors.white),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                  const Icon(Icons.chevron_right_rounded, color: Colors.white),
+                ],
               ),
             ),
           ),
         ),
-        ...subs.when<List<Widget>>(
+      ),
+    );
+
+    return CustomScrollView(
+      slivers: [
+        header,
+        ...tree.when<List<Widget>>(
           loading: () => [const SliverToBoxAdapter(child: LoadingBox())],
-          error: (e, _) => [
-            SliverToBoxAdapter(child: ErrorBox(e, onRetry: () => ref.invalidate(subcategoriesProvider(category.id)))),
-          ],
-          data: (list) => list.isEmpty
-              ? [_ProductsSliver(categoryId: category.id)]
-              : [
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
-                    sliver: SliverGrid(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        mainAxisSpacing: 14,
-                        crossAxisSpacing: 10,
-                        mainAxisExtent: 124,
-                      ),
-                      delegate: SliverChildBuilderDelegate(
-                        (context, i) {
-                          final sc = list[i];
-                          return InkWell(
-                            borderRadius: BorderRadius.circular(16),
-                            onTap: () => _open(context, sc),
-                            child: Column(
-                              children: [
-                                AspectRatio(
-                                  aspectRatio: 1,
-                                  child: NetImage(sc.image, tint: C.tints[i % C.tints.length], radius: 16, padding: 6),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  sc.name,
-                                  textAlign: TextAlign.center,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, height: 1.25),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                        childCount: list.length,
-                      ),
+          error: (e, _) => [SliverToBoxAdapter(child: ErrorBox(e, onRetry: () => ref.invalidate(categoryTreeProvider)))],
+          data: (t) {
+            final level2 = t[category.id] ?? const <Category>[];
+            if (level2.isEmpty) return [_ProductsSliver(categoryId: category.id)];
+            // Like the website menu: sub-sections that have their own children get a heading + their items;
+            // the ones without children are shown together as tiles first.
+            final leaves = level2.where((c) => (t[c.id] ?? const []).isEmpty).toList();
+            final groups = level2.where((c) => (t[c.id] ?? const []).isNotEmpty).toList();
+            return [
+              if (leaves.isNotEmpty) _TileGrid(items: leaves, onTap: (c) => _open(context, c)),
+              for (final g in groups) ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 18, 6, 4),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text(g.name, style: display(15))),
+                        TextButton(
+                          onPressed: () => _open(context, g),
+                          style: TextButton.styleFrom(foregroundColor: C.primary, minimumSize: const Size(44, 36)),
+                          child: Text(context.tr('الكل', 'All'), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                        ),
+                      ],
                     ),
                   ),
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 22, 14, 8),
-                      child: Text(context.tr('الأكثر مبيعاً', 'Best sellers'), style: display(16)),
-                    ),
-                  ),
-                  _ProductsSliver(categoryId: category.id),
-                ],
+                ),
+                _TileGrid(items: t[g.id]!, onTap: (c) => _open(context, c), fallbackImage: g.image),
+              ],
+            ];
+          },
         ),
         const SliverToBoxAdapter(child: SizedBox(height: kTabBarClearance)),
       ],
+    );
+  }
+}
+
+class _TileGrid extends StatelessWidget {
+  const _TileGrid({required this.items, required this.onTap, this.fallbackImage});
+  final List<Category> items;
+  final ValueChanged<Category> onTap;
+  final String? fallbackImage;
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 10,
+          mainAxisExtent: 122,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, i) {
+            final c = items[i];
+            return InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => onTap(c),
+              child: Column(
+                children: [
+                  AspectRatio(
+                    aspectRatio: 1,
+                    child: NetImage(c.image ?? fallbackImage, tint: C.tints[(c.id + i) % C.tints.length], radius: 16, padding: 6),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    c.name,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, height: 1.25),
+                  ),
+                ],
+              ),
+            );
+          },
+          childCount: items.length,
+        ),
+      ),
     );
   }
 }

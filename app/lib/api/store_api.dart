@@ -43,6 +43,18 @@ class StoreApi {
         .toList();
   }
 
+  /// Every product category (all levels), for building the category tree like the website menu.
+  Future<List<Category>> allCategories() async {
+    final out = <Category>[];
+    for (var page = 1; page <= 5; page++) {
+      final data = await _c.get('$_b/products/categories', query: {'per_page': 100, 'page': page});
+      final list = [for (final c in (data as List)) Category.fromJson(Map<String, dynamic>.from(c as Map))];
+      out.addAll(list);
+      if (list.length < 100) break;
+    }
+    return out;
+  }
+
   Cart _cart(dynamic d) => Cart.fromJson(Map<String, dynamic>.from(d as Map));
 
   Future<Cart> cart() async => _cart(await _c.get('$_b/cart'));

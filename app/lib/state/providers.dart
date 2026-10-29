@@ -332,3 +332,18 @@ final pageProvider = FutureProvider.family<PageContent, int>((ref, id) => ref.wa
 final subcategoriesProvider = FutureProvider.family<List<Category>, int>(
   (ref, parent) => ref.watch(storeApiProvider).subcategories(parent),
 );
+
+/// Category tree: parent id -> children (only categories that have products somewhere below).
+final categoryTreeProvider = FutureProvider<Map<int, List<Category>>>((ref) async {
+  final all = await ref.watch(storeApiProvider).allCategories();
+  final byParent = <int, List<Category>>{};
+  for (final c in all) {
+    (byParent[c.parent] ??= []).add(c);
+  }
+  // Keep a category if it, or anything under it, has products.
+  final memo = <int, bool>{};
+  bool has(Category c) => memo[c.id] ??= c.count > 0 || (byParent[c.id] ?? const []).any(has);
+  return {
+    for (final e in byParent.entries) e.key: e.value.where(has).toList(),
+  };
+});

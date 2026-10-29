@@ -40,17 +40,19 @@ class Money {
 }
 
 class Category {
-  Category({required this.id, required this.name, this.image, this.count = 0});
+  Category({required this.id, required this.name, this.image, this.count = 0, this.parent = 0});
   final int id;
   final String name;
   final String? image;
   final int count;
+  final int parent;
 
   factory Category.fromJson(Map<String, dynamic> j) => Category(
         id: _int(j['id']),
         name: cleanText(j['name']),
         image: j['image'] is Map ? (j['image']['thumbnail'] ?? j['image']['src']) : j['image'] as String?,
         count: _int(j['count']),
+        parent: _int(j['parent']),
       );
 }
 
