@@ -1,0 +1,17 @@
+name: Staging checkout test
+on:
+  workflow_dispatch:
+    inputs:
+      products:
+        description: "id:qty list"
+        default: "5972:2"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Place a test order like the app
+        env:
+          STAGING_KEY: ${{ secrets.STAGING_KEY }}
+          PRODUCTS: ${{ github.event.inputs.products }}
+        run: bash tools/staging-checkout-test.sh
