@@ -109,7 +109,7 @@ class _ProductViewState extends ConsumerState<_ProductView> {
               Container(
                 height: 360 + top,
                 decoration: const BoxDecoration(
-                  color: C.peach,
+                  color: C.surface,
                   borderRadius: BorderRadius.vertical(bottom: Radius.circular(36)),
                 ),
                 padding: EdgeInsets.only(top: top + 60, bottom: 24),

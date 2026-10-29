@@ -32,7 +32,9 @@ class NetImage extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: ColoredBox(
-        color: tint,
+        // Product photos sit on plain white (no colored card behind them); the tint is only
+        // for the empty placeholder.
+        color: url == null || url!.isEmpty ? tint : C.surface,
         child: url == null || url!.isEmpty
             ? placeholder
             : Padding(

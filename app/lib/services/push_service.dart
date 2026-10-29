@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../firebase_options.dart';
 import '../router.dart';
@@ -66,19 +67,36 @@ class PushService {
   }
 
   /// True when the system dialog can still be shown (not decided yet).
+  static const _kAsked = 'push_asked_v1';
+
   static Future<bool> canAsk() async {
     if (!_ready) return false;
     try {
       final s = await FirebaseMessaging.instance.getNotificationSettings();
-      return s.authorizationStatus == AuthorizationStatus.notDetermined;
+      if (s.authorizationStatus == AuthorizationStatus.notDetermined) return true;
+      // Android never reports "not determined" — it says "denied" until the customer allows.
+      // Ask once with our explanation; after that only from the account screen.
+      if (Platform.isAndroid && s.authorizationStatus != AuthorizationStatus.authorized) {
+        final prefs = await SharedPreferences.getInstance();
+        return !(prefs.getBool(_kAsked) ?? false);
+      }
+      return false;
     } catch (_) {
       return false;
     }
   }
 
+  static Future<void> markAsked() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kAsked, true);
+    } catch (_) {}
+  }
+
   /// Shows the system permission dialog, then registers the device. Returns true if allowed.
   static Future<bool> requestAndRegister(ProviderContainer container) async {
     if (!_ready) return false;
+    await markAsked();
     await _register(container, ask: true);
     return await isAllowed() ?? false;
   }

@@ -309,6 +309,7 @@ class _ComplaintFormState extends ConsumerState<ComplaintFormScreen> {
   void _photoSheet() {
     showModalBottomSheet(
       context: context,
+      useRootNavigator: true,
       showDragHandle: true,
       builder: (ctx) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [

@@ -16,6 +16,7 @@ Future<void> askNotifications(BuildContext context, {bool force = false}) async 
   final container = ProviderScope.containerOf(context, listen: false);
   final yes = await showModalBottomSheet<bool>(
     context: context,
+    useRootNavigator: true,
     backgroundColor: C.ground,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
     builder: (ctx) => _Rationale(
@@ -28,13 +29,28 @@ Future<void> askNotifications(BuildContext context, {bool force = false}) async 
       allow: ctx.tr('فعّل الإشعارات', 'Turn on notifications'),
     ),
   );
-  if (yes == true) await PushService.requestAndRegister(container);
+  if (yes == true) {
+    await PushService.requestAndRegister(container);
+  } else {
+    await PushService.markAsked();
+  }
+}
+
+bool _autoAsked = false;
+
+/// Once per app start: a signed-in customer who hasn't decided yet is asked for notifications.
+Future<void> autoAskNotifications(BuildContext context) async {
+  if (_autoAsked) return;
+  _autoAsked = true;
+  await Future<void>.delayed(const Duration(milliseconds: 1200));
+  if (context.mounted) await askNotifications(context);
 }
 
 /// Explains why we want the location before the system dialog. Returns true to continue.
 Future<bool> explainLocation(BuildContext context) async {
   final yes = await showModalBottomSheet<bool>(
     context: context,
+    useRootNavigator: true,
     backgroundColor: C.ground,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
     builder: (ctx) => _Rationale(

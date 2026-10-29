@@ -151,7 +151,10 @@ class CartItem {
     required this.image,
     required this.lineTotal,
     required this.variation,
-  });
+    this.bundledBy = '',
+    this.isBundle = false,
+    List<CartItem>? parts,
+  }) : parts = parts ?? <CartItem>[];
   final String key;
   final int productId;
   final String name;
@@ -159,6 +162,13 @@ class CartItem {
   final String? image;
   final Money lineTotal;
   final String variation;
+
+  /// Key of the bundle this line belongs to ('' for normal lines).
+  final String bundledBy;
+  final bool isBundle;
+
+  /// The bundle's contents (shown inside the bundle line, not as separate products).
+  final List<CartItem> parts;
 }
 
 class ShippingRate {
@@ -233,7 +243,10 @@ class Cart {
       final m = i as Map;
       final imgs = m['images'] as List? ?? const [];
       final t = (m['totals'] as Map?) ?? const {};
+      final ext = ((m['extensions'] as Map?)?['dokan-app'] as Map?) ?? const {};
       items.add(CartItem(
+        bundledBy: '${ext['bundled_by'] ?? ''}',
+        isBundle: ext['is_bundle'] == true,
         key: m['key'].toString(),
         productId: _int(m['id']),
         name: cleanText(m['name']),
@@ -245,6 +258,26 @@ class Cart {
         ].where((s) => s.isNotEmpty).join(' · '),
       ));
     }
+    // Bundles: move the contents under their bundle. Older servers don't send bundled_by, so a
+    // zero-priced line right after a priced line is treated as part of it.
+    final top = <CartItem>[];
+    final byKey = <String, CartItem>{};
+    CartItem? lastPriced;
+    for (final it in items) {
+      final parent = it.bundledBy.isNotEmpty
+          ? byKey[it.bundledBy]
+          : (it.lineTotal.isZero ? lastPriced : null);
+      if (parent != null && it.lineTotal.isZero) {
+        parent.parts.add(it);
+        continue;
+      }
+      top.add(it);
+      byKey[it.key] = it;
+      if (!it.lineTotal.isZero) lastPriced = it;
+    }
+    items
+      ..clear()
+      ..addAll(top);
     final rates = <ShippingRate>[];
     for (final p in (j['shipping_rates'] as List? ?? const [])) {
       final pm = p as Map;
@@ -267,7 +300,7 @@ class Cart {
     }
     return Cart(
       items: items,
-      itemsCount: _int(j['items_count']),
+      itemsCount: items.fold<int>(0, (n, i) => n + i.quantity),
       subtotal: Money.store(totals['total_items'], unit),
       shipping: Money.store(totals['total_shipping'], unit),
       discount: Money.store(totals['total_discount'], unit),

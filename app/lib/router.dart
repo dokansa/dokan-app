@@ -218,6 +218,12 @@ const double kTabBarClearance = 130;
 
 /// Exact height the floating tab bar covers at the bottom (bar + its margin + phone's gesture area).
 double tabBarSpace(BuildContext context) {
-  final b = MediaQuery.viewPaddingOf(context).bottom;
-  return 68 + (b > 12 ? b : 12);
+  // Phones with on-screen buttons report the inset differently; take the larger of the two
+  // (inside the shell, padding.bottom is the real height the tab bar covers).
+  final view = MediaQuery.viewPaddingOf(context).bottom;
+  final sys = View.of(context).viewPadding.bottom / View.of(context).devicePixelRatio;
+  final inset = [view, sys, 12.0].reduce((a, b) => a > b ? a : b);
+  final fromBar = MediaQuery.paddingOf(context).bottom;
+  final calc = 68 + inset;
+  return fromBar > calc ? fromBar : calc;
 }

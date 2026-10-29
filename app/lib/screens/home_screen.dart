@@ -10,6 +10,7 @@ import '../services/local_store.dart';
 import '../state/providers.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/permission_prompts.dart';
 import '../widgets/product_rail.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -27,6 +28,9 @@ class HomeScreen extends ConsumerWidget {
     final pets = ref.watch(petsProvider).valueOrNull ?? const <Pet>[];
     final pet = ref.watch(selectedPetProvider);
     final user = ref.watch(sessionProvider);
+    if (user != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => autoAskNotifications(context));
+    }
     final petCat = pet == null ? null : config.valueOrNull?.petCategories[pet.kind];
     final forKind = pet == null || petCat == null ? '' : ' ${petKindPlural(pet.kind, context.isAr)}';
     final popular = config.valueOrNull?.popularSearches ?? const <String>[];

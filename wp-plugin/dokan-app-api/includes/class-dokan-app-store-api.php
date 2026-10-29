@@ -81,9 +81,46 @@ class Dokan_App_Store_API {
 					)
 				);
 			}
+			// Bundles (WPC Product Bundles): tell the app which lines are the contents of a bundle.
+			if ( function_exists( 'woocommerce_store_api_register_endpoint_data' ) && class_exists( '\Automattic\WooCommerce\StoreApi\Schemas\V1\CartItemSchema' ) ) {
+				woocommerce_store_api_register_endpoint_data(
+					array(
+						'endpoint'        => \Automattic\WooCommerce\StoreApi\Schemas\V1\CartItemSchema::IDENTIFIER,
+						'namespace'       => self::NS,
+						'data_callback'   => array( __CLASS__, 'cart_item_data' ),
+						'schema_callback' => function () {
+							return array(
+								'bundled_by' => array( 'type' => 'string', 'readonly' => true, 'context' => array( 'view', 'edit' ) ),
+								'is_bundle'  => array( 'type' => 'boolean', 'readonly' => true, 'context' => array( 'view', 'edit' ) ),
+							);
+						},
+						'schema_type'     => ARRAY_A,
+					)
+				);
+			}
 		} catch ( \Throwable $e ) {
 			Dokan_App_Helpers::log( 'Store API extension registration failed: ' . $e->getMessage() );
 		}
+	}
+
+	/**
+	 * Cart item extension data.
+	 *
+	 * @param array $item Cart item.
+	 * @return array
+	 */
+	public static function cart_item_data( $item ) {
+		$parent = '';
+		foreach ( array( 'woosb_parent_key', 'bundled_by', 'woosg_parent_key' ) as $k ) {
+			if ( ! empty( $item[ $k ] ) && is_string( $item[ $k ] ) ) {
+				$parent = $item[ $k ];
+				break;
+			}
+		}
+		return array(
+			'bundled_by' => $parent,
+			'is_bundle'  => ! empty( $item['woosb_ids'] ) || ! empty( $item['bundled_items'] ),
+		);
 	}
 
 	/**

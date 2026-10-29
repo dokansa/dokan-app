@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -110,6 +111,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     final user = ref.read(sessionProvider);
     final saved = await showModalBottomSheet<bool>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: C.ground,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
@@ -173,7 +175,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     final cartAsync = ref.watch(cartProvider);
     final user = ref.watch(sessionProvider);
     final config = ref.watch(configProvider).valueOrNull;
-    final barBottom = tabBarSpace(context) + 8;
+    final barBottom = tabBarSpace(context) + 10;
 
     return Scaffold(
       appBar: AppBar(
@@ -241,6 +243,25 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                     ],
                     const SizedBox(height: 14),
                     _StepTitle(icon: Icons.credit_card_rounded, text: context.tr('طريقة الدفع', 'Payment')),
+                    if (methods.isEmpty)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(color: C.peach, borderRadius: BorderRadius.circular(R.card)),
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          const Icon(Icons.info_outline_rounded, size: 20, color: C.accentText),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              context.tr(
+                                'ما فيه طريقة دفع متاحة لهذا الطلب. الدفع عند الاستلام متاح للطلبات فوق حد معيّن — زِد سلتك أو تواصل معنا.',
+                                'No payment method is available for this order. Cash on delivery is available above a minimum order — add more items or contact us.',
+                              ),
+                              style: const TextStyle(fontSize: 12.5, height: 1.6),
+                            ),
+                          ),
+                        ]),
+                      ),
                     for (final m in methods)
                       _OptionTile(
                         title: m.title,
@@ -267,6 +288,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                   if (user != null) const PolicyConsentLine(),
                 ],
               ),
+              if (MediaQuery.viewInsetsOf(context).bottom == 0)
               PositionedDirectional(
                 start: 12,
                 end: 12,
@@ -350,7 +372,16 @@ class _CartLine extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, height: 1.35)),
-                  if (item.variation.isNotEmpty)
+                  if (item.parts.isNotEmpty)
+                    Text(
+                      context.tr(
+                        'الباقة فيها ${item.parts.fold<int>(0, (n, p) => n + p.quantity) ~/ (item.quantity == 0 ? 1 : item.quantity)} قطعة',
+                        'Bundle of ${item.parts.fold<int>(0, (n, p) => n + p.quantity) ~/ (item.quantity == 0 ? 1 : item.quantity)} pieces',
+                      ),
+                      maxLines: 1,
+                      style: const TextStyle(fontSize: 12, color: C.primary, fontWeight: FontWeight.w600),
+                    )
+                  else if (item.variation.isNotEmpty)
                     Text(item.variation, maxLines: 1, style: const TextStyle(fontSize: 12, color: C.muted)),
                   const Spacer(),
                   Row(
@@ -710,6 +741,21 @@ class _AddressSheetState extends ConsumerState<_AddressSheet> {
       if (_city == '') _otherCity.text = savedCity;
     }
     _loc = ref.read(pickedLocationProvider);
+    // Pull the location automatically when the sheet opens.
+    if (_loc == null) WidgetsBinding.instance.addPostFrameCallback((_) => _autoLocate());
+  }
+
+  Future<void> _autoLocate() async {
+    try {
+      final perm = await Geolocator.checkPermission();
+      if (!mounted) return;
+      final granted = perm == LocationPermission.always || perm == LocationPermission.whileInUse;
+      if (granted) {
+        await _useMyLocation(silent: true, keepTypedAddress: _c['address_1']!.text.trim().isNotEmpty);
+      } else if (perm == LocationPermission.denied) {
+        await _useMyLocation(keepTypedAddress: _c['address_1']!.text.trim().isNotEmpty);
+      }
+    } catch (_) {}
   }
 
   @override
@@ -721,30 +767,32 @@ class _AddressSheetState extends ConsumerState<_AddressSheet> {
     super.dispose();
   }
 
-  Future<void> _useMyLocation() async {
-    if (!await explainLocation(context)) return;
+  Future<void> _useMyLocation({bool silent = false, bool keepTypedAddress = false}) async {
+    if (!silent && !await explainLocation(context)) return;
     setState(() => _locating = true);
     try {
       final loc = await LocationService.current();
       if (!mounted) return;
       setState(() {
         _loc = loc;
-        final matched = _matchCity(loc.city);
-        if (matched != null) {
+        final matched = keepTypedAddress ? null : _matchCity(loc.city);
+        if (keepTypedAddress) {
+          // Only the pin is added; the address the customer typed stays.
+        } else if (matched != null) {
           _city = matched;
         } else if (loc.city.isNotEmpty) {
           _city = '';
           _otherCity.text = loc.city;
         }
-        if (loc.line.isNotEmpty) _c['address_1']!.text = loc.line;
+        if (loc.line.isNotEmpty && !keepTypedAddress) _c['address_1']!.text = loc.line;
       });
       showMessage(context, context.tr('حددنا موقعك ✓ تأكد من رقم البيت', 'Location pinned ✓ — please add your house number'));
     } on LocationError catch (e) {
-      if (!mounted) return;
+      if (!mounted || silent) return;
       showMessage(context, e.message, error: true);
       if (e.openSettings) await LocationService.openSettings();
     } catch (_) {
-      if (mounted) {
+      if (mounted && !silent) {
         showMessage(context, context.tr('ما قدرنا نحدد موقعك، اكتب العنوان يدوياً', "Couldn't get your location — please type the address"),
             error: true);
       }
@@ -791,7 +839,7 @@ class _AddressSheetState extends ConsumerState<_AddressSheet> {
     String? requiredField(String? v) => v == null || v.trim().isEmpty ? context.tr('مطلوب', 'Required') : null;
     final ar = context.isAr;
     return Padding(
-      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + MediaQuery.viewInsetsOf(context).bottom),
+      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + MediaQuery.viewInsetsOf(context).bottom + MediaQuery.viewPaddingOf(context).bottom),
       child: Form(
         key: _form,
         child: SingleChildScrollView(
