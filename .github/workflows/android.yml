@@ -139,7 +139,7 @@ jobs:
           # A release version can be used only once. If this one already exists (native changes
           # since it), move to the next build number and save it in pubspec so patches follow it.
           if ! shorebird release android --artifact=apk -- $DEFINES 2>&1 | tee release.log; then
-            if grep -qi "already exists" release.log; then
+            if grep -qiE "already exists|existing [a-z]+ release|bump your version" release.log; then
               NEXT="${APP_VERSION%+*}+${GITHUB_RUN_NUMBER}"
               perl -pi -e "s/^version: .*/version: $NEXT/" pubspec.yaml
               shorebird release android --artifact=apk -- $DEFINES 2>&1 | tee release.log || {
