@@ -123,6 +123,7 @@ class PushService {
         if (pid != null) router.push('/product/$pid');
         break;
       case 'promo':
+      case 'link':
         final link = data['link']?.toString() ?? '';
         if (link.startsWith('/')) router.push(link);
         break;

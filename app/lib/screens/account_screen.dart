@@ -211,6 +211,11 @@ class AccountScreen extends ConsumerWidget {
             onTap: () => context.push('/support'),
           ),
           _Tile(
+            icon: Icons.report_gmailerrorred_rounded,
+            title: context.tr('الشكاوى والإلغاء', 'Complaints & cancellation'),
+            onTap: () => context.push('/complaints'),
+          ),
+          _Tile(
             icon: Icons.policy_outlined,
             title: context.tr('السياسات والشروط', 'Policies & terms'),
             onTap: () => context.push('/policies'),
@@ -227,7 +232,7 @@ class AccountScreen extends ConsumerWidget {
           const SizedBox(height: 12),
           Center(
             child: Text(
-              context.tr('دكان · نسخة تجريبية · تحديث ٢', 'Dokan · test version · update 2'),
+              context.tr('دكان · نسخة تجريبية · تحديث ٣', 'Dokan · test version · update 3'),
               style: const TextStyle(fontSize: 12, color: C.faint),
             ),
           ),

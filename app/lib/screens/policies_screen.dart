@@ -108,6 +108,18 @@ class PolicyScreen extends ConsumerWidget {
         ),
       ),
       body: body,
+      bottomNavigationBar: policyKey == 'complaints' || policyKey == 'returns'
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
+                child: FilledButton.icon(
+                  onPressed: () => context.push('/complaint-new'),
+                  icon: const Icon(Icons.report_gmailerrorred_rounded),
+                  label: Text(context.tr('ارفع شكوى أو اطلب إلغاء', 'File a complaint or cancel')),
+                ),
+              ),
+            )
+          : null,
     );
   }
 }

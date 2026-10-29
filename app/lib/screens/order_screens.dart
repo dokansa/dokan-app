@@ -164,38 +164,6 @@ class _OrderScreenState extends ConsumerState<OrderScreen> {
     }
   }
 
-  Future<void> _cancel(OrderDetail o) async {
-    final reason = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(ctx.tr('طلب إلغاء', 'Cancellation request')),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text(ctx.tr('بنوقف تجهيز الطلب ونراجع طلب الإلغاء.', "We'll pause packing your order and review the request.")),
-          const SizedBox(height: 12),
-          TextField(controller: reason, decoration: InputDecoration(hintText: ctx.tr('السبب (اختياري)', 'Reason (optional)'))),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(ctx.tr('رجوع', 'Back'))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(ctx.tr('أرسل الطلب', 'Send request'))),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    setState(() => _busy = true);
-    try {
-      await ref.read(appApiProvider).cancelRequest(o.summary.id, reason.text.trim());
-      ref.invalidate(orderProvider(widget.id));
-      ref.invalidate(ordersProvider);
-      if (mounted) showMessage(context, context.tr('وصلنا طلب الإلغاء، بنرد عليك قريب', "We got your cancellation request. We'll get back to you soon"));
-    } catch (e) {
-      if (mounted) showMessage(context, e, error: true);
-    } finally {
-      reason.dispose();
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final order = ref.watch(orderProvider(widget.id));
@@ -258,7 +226,7 @@ class _OrderScreenState extends ConsumerState<OrderScreen> {
                 Expanded(
                   child: FilledButton.icon(
                     style: FilledButton.styleFrom(backgroundColor: C.surface, foregroundColor: C.ink),
-                    onPressed: () => context.push('/support?order=${o.summary.id}'),
+                    onPressed: () => context.push('/complaint-new?order=${o.summary.id}'),
                     icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
                     label: Text(context.tr('عندي مشكلة', 'I have a problem'), style: const TextStyle(fontSize: 14)),
                   ),
@@ -299,7 +267,12 @@ class _OrderScreenState extends ConsumerState<OrderScreen> {
               if (o.canCancel) ...[
                 const SizedBox(height: 8),
                 TextButton(
-                  onPressed: _busy ? null : () => _cancel(o),
+                  onPressed: _busy
+                      ? null
+                      : () async {
+                          await context.push('/complaint-new?order=${o.summary.id}&cat=cancel');
+                          ref.invalidate(orderProvider(o.summary.id));
+                        },
                   style: TextButton.styleFrom(foregroundColor: C.accentText, minimumSize: const Size.fromHeight(48)),
                   child: Text(context.tr('طلب إلغاء الطلب', 'Request cancellation')),
                 ),

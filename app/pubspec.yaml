@@ -28,6 +28,7 @@ dependencies:
   geolocator: ^13.0.2
   geocoding: ^3.0.0
   flutter_widget_from_html_core: ^0.15.2
+  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_test:

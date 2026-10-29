@@ -83,6 +83,28 @@ class AppApi {
     return d['status']?.toString() ?? '';
   }
 
+  // Complaints & cancellation (v1.3)
+  Future<Map<String, dynamic>> complaintOptions() async => _m(await _c.get('$_b/complaints/options'));
+
+  Future<Map<String, dynamic>> analyzeComplaint({String text = '', int? orderId, String? category}) async =>
+      _m(await _c.post('$_b/complaints/analyze', body: {
+        'text': text,
+        if (orderId != null) 'order_id': orderId,
+        if (category != null) 'category': category,
+      }));
+
+  Future<Map<String, dynamic>> submitComplaint(Map<String, dynamic> body) async =>
+      _m(await _c.post('$_b/complaints', body: body));
+
+  Future<List<Map<String, dynamic>>> complaints() async {
+    final d = _m(await _c.get('$_b/complaints'));
+    return [for (final i in (d['items'] as List? ?? const [])) Map<String, dynamic>.from(i as Map)];
+  }
+
+  Future<Map<String, dynamic>> complaint(int id) async => _m(await _c.get('$_b/complaints/$id'));
+
+  Future<void> replyComplaint(int id, String text) async => await _c.post('$_b/complaints/$id/reply', body: {'text': text});
+
   Future<SearchResult> search(String q, {String? petId, bool ai = false, bool log = false}) async =>
       SearchResult.fromJson(_m(await _c.get('$_b/search', query: {
         'q': q,

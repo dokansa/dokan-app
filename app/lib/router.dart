@@ -17,6 +17,7 @@ import 'screens/policies_screen.dart';
 import 'screens/product_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/support_screen.dart';
+import 'screens/complaints_screens.dart';
 import 'state/providers.dart';
 import 'theme.dart';
 
@@ -118,6 +119,24 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/support',
         parentNavigatorKey: rootNavigatorKey,
         builder: (_, s) => SupportScreen(orderId: int.tryParse(s.uri.queryParameters['order'] ?? '')),
+      ),
+      GoRoute(
+        path: '/complaints',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, __) => const ComplaintsScreen(),
+      ),
+      GoRoute(
+        path: '/complaint-new',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, s) => ComplaintFormScreen(
+          orderId: int.tryParse(s.uri.queryParameters['order'] ?? ''),
+          category: s.uri.queryParameters['cat'],
+        ),
+      ),
+      GoRoute(
+        path: '/complaint/:id',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, s) => ComplaintScreen(id: int.tryParse(s.pathParameters['id']!) ?? 0),
       ),
       GoRoute(
         path: '/login',
