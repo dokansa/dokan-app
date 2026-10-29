@@ -42,6 +42,22 @@ class Dokan_App_Auth {
 	 */
 	public static function init() {
 		add_filter( 'determine_current_user', array( __CLASS__, 'determine_current_user' ), 20 );
+		// WordPress drops cookie logins without a nonce at priority 100; an app token always wins.
+		add_filter( 'rest_authentication_errors', array( __CLASS__, 'token_wins' ), 101 );
+	}
+
+	/**
+	 * Keep the token user even when a browser cookie was also sent.
+	 *
+	 * @param mixed $result Previous result.
+	 * @return mixed
+	 */
+	public static function token_wins( $result ) {
+		if ( self::$token_user_id && get_current_user_id() !== (int) self::$token_user_id ) {
+			wp_set_current_user( (int) self::$token_user_id );
+			return true;
+		}
+		return $result;
 	}
 
 	/**

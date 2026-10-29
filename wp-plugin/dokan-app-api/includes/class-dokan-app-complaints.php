@@ -567,7 +567,7 @@ class Dokan_App_Complaints {
 			'kind_label'   => 'return' === $kind ? Dokan_App_Helpers::t( 'طلب إرجاع', 'Return' ) : ( 'inquiry' === $kind ? Dokan_App_Helpers::t( 'استفسار', 'Question' ) : Dokan_App_Helpers::t( 'شكوى', 'Complaint' ) ),
 			'category'     => $cat,
 			'category_label' => '' !== $cat ? self::cat_label( $cat ) : '',
-			'subject'      => get_the_title( $p ),
+			'subject'      => $p->post_title,
 			'status'       => $state,
 			'status_label' => self::state_label( $state ),
 			'open'         => ! in_array( $state, array( 'completed', 'closed', 'rejected' ), true ),
