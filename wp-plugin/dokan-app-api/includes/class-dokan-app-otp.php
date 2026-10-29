@@ -63,10 +63,10 @@ class Dokan_App_OTP {
 	 */
 	public static function channels() {
 		$ok = array();
-		if ( '' !== trim( (string) Dokan_App_Helpers::setting( 'wa_phone_number_id' ) ) && '' !== trim( (string) Dokan_App_Helpers::setting( 'wa_access_token' ) ) && '' !== trim( (string) Dokan_App_Helpers::setting( 'wa_template_name' ) ) ) {
+		if ( self::own_whatsapp() || self::site_whatsapp() ) {
 			$ok[] = 'whatsapp';
 		}
-		if ( '' !== trim( (string) Dokan_App_Helpers::setting( 'sms_url' ) ) ) {
+		if ( '' !== trim( (string) Dokan_App_Helpers::setting( 'sms_url' ) ) || self::site_sms() ) {
 			$ok[] = 'sms';
 		}
 		if ( 'sms' === Dokan_App_Helpers::setting( 'otp_sender' ) && 2 === count( $ok ) ) {
@@ -336,6 +336,49 @@ class Dokan_App_OTP {
 	 * @param string $channel Preferred channel ('' = store preference).
 	 * @return string|WP_Error Channel used.
 	 */
+	/** WhatsApp Cloud API keys entered in the app settings. */
+	private static function own_whatsapp() {
+		return '' !== trim( (string) Dokan_App_Helpers::setting( 'wa_phone_number_id' ) ) && '' !== trim( (string) Dokan_App_Helpers::setting( 'wa_access_token' ) ) && '' !== trim( (string) Dokan_App_Helpers::setting( 'wa_template_name' ) );
+	}
+
+	/** The store's own WhatsApp login-code sender (theme: ds_wa_send_otp), used as is. */
+	private static function site_whatsapp() {
+		if ( ! function_exists( 'ds_wa_send_otp' ) ) {
+			return false;
+		}
+		return ! function_exists( 'ds_wa_enabled' ) || (bool) ds_wa_enabled();
+	}
+
+	/** The store's own SMS sender (theme: Corbit, ds_corbit_otp), used as is. */
+	private static function site_sms() {
+		return function_exists( 'ds_corbit_otp' );
+	}
+
+	/**
+	 * Send through the store's existing senders (no extra keys).
+	 *
+	 * @return true|WP_Error
+	 */
+	private static function send_site( $ch, $phone, $code ) {
+		$local = '0' . Dokan_App_Helpers::last9( $phone );
+		if ( 'whatsapp' === $ch ) {
+			// Force WhatsApp even if the website remembers "SMS" as this visitor's choice.
+			$hook = function () {
+				return 'whatsapp';
+			};
+			add_filter( 'ds_wa_selected_channel', $hook );
+			$r = ds_wa_send_otp( $local, $code );
+			remove_filter( 'ds_wa_selected_channel', $hook );
+		} else {
+			$r = ds_corbit_otp( $local, $code );
+		}
+		if ( false === $r || null === $r || is_wp_error( $r ) || ( is_array( $r ) && isset( $r['ok'] ) && ! $r['ok'] ) ) {
+			Dokan_App_Helpers::log( 'OTP via store sender failed (' . $ch . ')' );
+			return Dokan_App_Helpers::error( 'dokan_app_send_failed', 'تعذر إرسال رمز التحقق، يرجى المحاولة لاحقًا.', 502 );
+		}
+		return true;
+	}
+
 	private static function send( $phone, $code, $channel = '' ) {
 		$configured = self::channels();
 		$order      = $configured;
@@ -356,7 +399,11 @@ class Dokan_App_OTP {
 				continue; // Chosen but not configured: fall back.
 			}
 			try {
-				$r = 'whatsapp' === $ch ? self::send_whatsapp( $phone, $code ) : self::send_sms( $phone, $code );
+				if ( 'whatsapp' === $ch ) {
+					$r = self::own_whatsapp() ? self::send_whatsapp( $phone, $code ) : self::send_site( 'whatsapp', $phone, $code );
+				} else {
+					$r = '' !== trim( (string) Dokan_App_Helpers::setting( 'sms_url' ) ) ? self::send_sms( $phone, $code ) : self::send_site( 'sms', $phone, $code );
+				}
 			} catch ( \Throwable $e ) {
 				Dokan_App_Helpers::log( 'OTP send exception (' . $ch . '): ' . $e->getMessage() );
 				$r = Dokan_App_Helpers::error( 'dokan_app_send_failed', 'تعذر إرسال رمز التحقق، يرجى المحاولة لاحقًا.', 502 );
