@@ -1,0 +1,4 @@
+otp: {"ok":true,"ttl":300,"channel":"sms"}
+add 5972:2 → ok, items total 40282
+payment methods: ["cod"] · shipping: [{"id":"dokansa_shipping","price":"0","selected":true},{"id":"local_pickup:5","price":"0","selected":false}]
+checkout [app fields] → ORDER #229170 status processing redirect https://staging.dokansa.com/checkout/order-received/229170/? result success
