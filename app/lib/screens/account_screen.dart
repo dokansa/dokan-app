@@ -224,6 +224,13 @@ class AccountScreen extends ConsumerWidget {
               onTap: () => _delete(context, ref),
             ),
           ],
+          const SizedBox(height: 12),
+          Center(
+            child: Text(
+              context.tr('دكان · نسخة تجريبية · تحديث ٢', 'Dokan · test version · update 2'),
+              style: const TextStyle(fontSize: 12, color: C.faint),
+            ),
+          ),
         ],
       ),
     );
