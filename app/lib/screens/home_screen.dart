@@ -138,11 +138,6 @@ class HomeScreen extends ConsumerWidget {
                 action: context.tr('عرض الكل', 'See all'),
                 onAction: () => context.push('/offers'),
               ),
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _DeliveryNote(text: config.valueOrNull?.deliveryRiyadh),
-            ),
           ],
         ),
       ),
@@ -509,31 +504,6 @@ class _PopularSearches extends StatelessWidget {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(R.chip)),
                 ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DeliveryNote extends StatelessWidget {
-  const _DeliveryNote({this.text});
-  final String? text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: C.mint, borderRadius: BorderRadius.circular(18)),
-      child: Row(
-        children: [
-          const Icon(Icons.local_shipping_outlined, color: C.primary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text ?? context.tr('داخل الرياض: يوصلك اليوم إذا طلبت قبل ٣ العصر', 'Riyadh: same-day delivery before 3 PM'),
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: C.primaryDeep),
-            ),
           ),
         ],
       ),

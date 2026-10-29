@@ -328,3 +328,7 @@ final searchProvider = FutureProvider.autoDispose.family<SearchResult, SearchArg
 });
 
 final pageProvider = FutureProvider.family<PageContent, int>((ref, id) => ref.watch(appApiProvider).page(id));
+
+final subcategoriesProvider = FutureProvider.family<List<Category>, int>(
+  (ref, parent) => ref.watch(storeApiProvider).subcategories(parent),
+);

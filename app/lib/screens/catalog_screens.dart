@@ -9,49 +9,246 @@ import '../state/providers.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 
-class CategoriesScreen extends ConsumerWidget {
+/// Main categories in a side rail; the chosen one's subcategories on the other side.
+class CategoriesScreen extends ConsumerStatefulWidget {
   const CategoriesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CategoriesScreen> createState() => _CategoriesScreenState();
+}
+
+class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
+  int? _selected;
+
+  @override
+  Widget build(BuildContext context) {
     final config = ref.watch(configProvider);
     return Scaffold(
-      appBar: AppBar(title: Text(context.tr('الأقسام', 'Categories'))),
+      appBar: AppBar(
+        title: Text(context.tr('الأقسام', 'Categories')),
+        actions: [
+          IconButton(
+            tooltip: context.tr('بحث', 'Search'),
+            icon: const Icon(Icons.search_rounded),
+            onPressed: () => context.push('/search'),
+          ),
+        ],
+      ),
       body: config.when(
         loading: () => const LoadingBox(),
         error: (e, _) => ErrorBox(e, onRetry: () => ref.invalidate(configProvider)),
-        data: (c) => GridView.builder(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, kTabBarClearance),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 1.05,
-          ),
-          itemCount: c.categories.length,
-          itemBuilder: (context, i) {
-            final cat = c.categories[i];
-            return Material(
-              color: C.tints[i % C.tints.length],
-              borderRadius: BorderRadius.circular(22),
+        data: (c) {
+          if (c.categories.isEmpty) return const SizedBox.shrink();
+          // Default to the selected pet's kind (e.g. cats), else the first category.
+          final pet = ref.watch(selectedPetProvider);
+          final petCat = pet == null ? null : c.petCategories[pet.kind];
+          final ids = c.categories.map((x) => x.id).toList();
+          final selId = _selected != null && ids.contains(_selected)
+              ? _selected!
+              : (petCat != null && ids.contains(petCat) ? petCat : ids.first);
+          final selected = c.categories.firstWhere((x) => x.id == selId);
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _Rail(categories: c.categories, selectedId: selId, onPick: (id) => setState(() => _selected = id)),
+              Expanded(child: _SubPanel(key: ValueKey(selId), category: selected)),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _Rail extends StatelessWidget {
+  const _Rail({required this.categories, required this.selectedId, required this.onPick});
+  final List<Category> categories;
+  final int selectedId;
+  final ValueChanged<int> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 96,
+      color: C.surface,
+      child: ListView.builder(
+        padding: EdgeInsets.only(top: 6, bottom: kTabBarClearance),
+        itemCount: categories.length,
+        itemBuilder: (context, i) {
+          final cat = categories[i];
+          final on = cat.id == selectedId;
+          return Semantics(
+            selected: on,
+            button: true,
+            label: cat.name,
+            child: InkWell(
+              onTap: () => onPick(cat.id),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+                decoration: BoxDecoration(
+                  color: on ? C.ground : C.surface,
+                  border: BorderDirectional(start: BorderSide(color: on ? C.accentStrong : Colors.transparent, width: 4)),
+                ),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      width: 52,
+                      height: 52,
+                      child: NetImage(cat.image, tint: C.tints[i % C.tints.length], radius: 16, padding: 2),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      cat.name,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.3,
+                        fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                        color: on ? C.ink : C.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SubPanel extends ConsumerWidget {
+  const _SubPanel({super.key, required this.category});
+  final Category category;
+
+  void _open(BuildContext context, Category c) =>
+      context.push('/category/${c.id}?name=${Uri.encodeComponent(c.name)}');
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final subs = ref.watch(subcategoriesProvider(category.id));
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+            child: Material(
+              color: C.primary,
+              borderRadius: BorderRadius.circular(18),
               child: InkWell(
-                borderRadius: BorderRadius.circular(22),
-                onTap: () => context.push('/category/${cat.id}?name=${Uri.encodeComponent(cat.name)}'),
+                borderRadius: BorderRadius.circular(18),
+                onTap: () => _open(context, category),
                 child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+                  child: Row(
                     children: [
-                      Expanded(child: NetImage(cat.image, tint: Colors.transparent, padding: 0)),
-                      const SizedBox(height: 8),
-                      Text(cat.name, style: display(16)),
-                      Text(context.tr('${cat.count} منتج', '${cat.count} products'), style: const TextStyle(fontSize: 12, color: C.muted)),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(category.name, style: display(17, color: Colors.white)),
+                            Text(
+                              context.tr('تسوّق الكل · ${category.count} منتج', 'Shop all · ${category.count} products'),
+                              style: const TextStyle(fontSize: 12, color: Color(0xFFCFE3DD)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right_rounded, color: Colors.white),
                     ],
                   ),
                 ),
               ),
-            );
-          },
+            ),
+          ),
+        ),
+        ...subs.when<List<Widget>>(
+          loading: () => [const SliverToBoxAdapter(child: LoadingBox())],
+          error: (e, _) => [
+            SliverToBoxAdapter(child: ErrorBox(e, onRetry: () => ref.invalidate(subcategoriesProvider(category.id)))),
+          ],
+          data: (list) => list.isEmpty
+              ? [_ProductsSliver(categoryId: category.id)]
+              : [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+                    sliver: SliverGrid(
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        mainAxisSpacing: 14,
+                        crossAxisSpacing: 10,
+                        mainAxisExtent: 124,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, i) {
+                          final sc = list[i];
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () => _open(context, sc),
+                            child: Column(
+                              children: [
+                                AspectRatio(
+                                  aspectRatio: 1,
+                                  child: NetImage(sc.image, tint: C.tints[i % C.tints.length], radius: 16, padding: 6),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  sc.name,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, height: 1.25),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        childCount: list.length,
+                      ),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 22, 14, 8),
+                      child: Text(context.tr('الأكثر مبيعاً', 'Best sellers'), style: display(16)),
+                    ),
+                  ),
+                  _ProductsSliver(categoryId: category.id),
+                ],
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: kTabBarClearance)),
+      ],
+    );
+  }
+}
+
+/// Best sellers of a category, two per row (used when it has no subcategories, and under them).
+class _ProductsSliver extends ConsumerWidget {
+  const _ProductsSliver({required this.categoryId});
+  final int categoryId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final res = ref.watch(productsProvider(ProductQuery(category: categoryId, orderBy: 'popularity')));
+    return res.when(
+      loading: () => const SliverToBoxAdapter(child: LoadingBox()),
+      error: (e, _) => SliverToBoxAdapter(child: ErrorBox(e)),
+      data: (list) => SliverPadding(
+        padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+        sliver: SliverGrid(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            mainAxisExtent: 250,
+          ),
+          delegate: SliverChildBuilderDelegate(
+            (_, i) => ProductCard(list[i], index: i, width: null),
+            childCount: list.length,
+          ),
         ),
       ),
     );

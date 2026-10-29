@@ -194,5 +194,11 @@ class _Shell extends ConsumerWidget {
   }
 }
 
-/// Bottom padding so content clears the floating tab bar.
-const double kTabBarClearance = 110;
+/// Bottom padding so scrolling content clears the floating tab bar.
+const double kTabBarClearance = 130;
+
+/// Exact height the floating tab bar covers at the bottom (bar + its margin + phone's gesture area).
+double tabBarSpace(BuildContext context) {
+  final b = MediaQuery.viewPaddingOf(context).bottom;
+  return 68 + (b > 12 ? b : 12);
+}

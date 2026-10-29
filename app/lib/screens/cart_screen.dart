@@ -173,9 +173,24 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     final cartAsync = ref.watch(cartProvider);
     final user = ref.watch(sessionProvider);
     final config = ref.watch(configProvider).valueOrNull;
+    final barBottom = tabBarSpace(context) + 8;
 
     return Scaffold(
-      appBar: AppBar(title: Text(context.tr('السلة', 'Cart'))),
+      appBar: AppBar(
+        title: Text(context.tr('السلة', 'Cart')),
+        actions: [
+          if ((cartAsync.valueOrNull?.itemsCount ?? 0) > 0)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(end: 16),
+              child: Center(
+                child: Text(
+                  context.tr('${cartAsync.value!.itemsCount} منتج', '${cartAsync.value!.itemsCount} items'),
+                  style: const TextStyle(color: C.muted, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+        ],
+      ),
       body: cartAsync.when(
         loading: () => const LoadingBox(),
         error: (e, _) => ErrorBox(e, onRetry: () => ref.invalidate(cartProvider)),
@@ -194,7 +209,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
           return Stack(
             children: [
               ListView(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 350),
+                padding: EdgeInsets.fromLTRB(16, 4, 16, barBottom + 96),
                 children: [
                   for (final item in cart.items)
                     _CartLine(
@@ -204,17 +219,17 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                     ),
                   for (final err in cart.errors)
                     Padding(
-                      padding: const EdgeInsets.only(top: 8),
+                      padding: const EdgeInsets.only(top: 4, bottom: 8),
                       child: Text(err, style: const TextStyle(color: C.accentText, fontWeight: FontWeight.w600)),
                     ),
-                  const SizedBox(height: 12),
+                  const _DeliveryStrip(),
+                  const SizedBox(height: 14),
                   if (user == null)
                     _LoginPrompt(onTap: () => context.push('/login'))
                   else ...[
+                    _StepTitle(icon: Icons.location_on_outlined, text: context.tr('التوصيل', 'Delivery')),
                     _AddressCard(cart: cart, ready: _addressReady(cart), onTap: () => _editAddress(cart)),
                     if (cart.rates.length > 1) ...[
-                      const SizedBox(height: 16),
-                      Text(context.tr('طريقة التوصيل', 'Delivery'), style: display(16)),
                       const SizedBox(height: 8),
                       for (final r in cart.rates)
                         _OptionTile(
@@ -224,9 +239,8 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                           onTap: () => _guard(() => ref.read(cartProvider.notifier).selectRate(r.packageId, r.rateId)),
                         ),
                     ],
-                    const SizedBox(height: 16),
-                    Text(context.tr('طريقة الدفع', 'Payment'), style: display(16)),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 14),
+                    _StepTitle(icon: Icons.credit_card_rounded, text: context.tr('طريقة الدفع', 'Payment')),
                     for (final m in methods)
                       _OptionTile(
                         title: m.title,
@@ -237,27 +251,33 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                           _guard(() => ref.read(cartProvider.notifier).selectPayment(m.id));
                         },
                       ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 6),
                     TextField(
                       controller: _note,
                       maxLines: 2,
-                      decoration: InputDecoration(hintText: context.tr('ملاحظة للطلب (اختياري)', 'Order note (optional)')),
+                      decoration: InputDecoration(
+                        hintText: context.tr('ملاحظة للطلب (اختياري)', 'Order note (optional)'),
+                        prefixIcon: const Icon(Icons.edit_note_rounded),
+                      ),
                     ),
                   ],
+                  const SizedBox(height: 14),
+                  _StepTitle(icon: Icons.receipt_long_outlined, text: context.tr('ملخص الطلب', 'Order summary')),
+                  _SummaryCard(cart: cart),
+                  if (user != null) const PolicyConsentLine(),
                 ],
               ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: _Summary(
-                  cart: cart,
+              PositionedDirectional(
+                start: 12,
+                end: 12,
+                bottom: barBottom,
+                child: _CheckoutBar(
+                  total: cart.total.label,
                   busy: _busy || _placing,
                   label: user == null
-                      ? context.tr('سجّل دخولك لإتمام الطلب', 'Sign in to place your order')
-                      : (_placing ? '' : context.tr('أكّد الطلب', 'Place order')),
+                      ? context.tr('سجّل دخولك وكمّل', 'Sign in to continue')
+                      : context.tr('أكّد الطلب', 'Place order'),
                   onPressed: user == null ? () => context.push('/login') : () => _place(cart),
-                  showConsent: user != null,
                 ),
               ),
             ],
@@ -308,39 +328,44 @@ class _CartLine extends StatelessWidget {
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(R.card)),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 72, height: 72, child: NetImage(item.image, tint: C.tints[item.productId % C.tints.length])),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(item.name,
-                    maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                if (item.variation.isNotEmpty) Text(item.variation, style: const TextStyle(fontSize: 12, color: C.muted)),
-                const SizedBox(height: 4),
-                Text(item.lineTotal.label, style: display(14, weight: FontWeight.w700)),
-              ],
+          InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => context.push('/product/${item.productId}'),
+            child: SizedBox(
+              width: 84,
+              height: 84,
+              child: NetImage(item.image, tint: C.tints[item.productId % C.tints.length], padding: 6),
             ),
           ),
-          Container(
-            decoration: BoxDecoration(color: C.ground, borderRadius: BorderRadius.circular(12)),
-            child: Column(
-              children: [
-                IconButton(
-                  tooltip: context.tr('زِد الكمية', 'Increase quantity'),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: busy ? null : () => onQty(item.quantity + 1),
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                ),
-                Text('${item.quantity}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                IconButton(
-                  tooltip: item.quantity == 1 ? context.tr('احذف', 'Remove') : context.tr('أنقص الكمية', 'Decrease quantity'),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: busy ? null : () => onQty(item.quantity - 1),
-                  icon: Icon(item.quantity == 1 ? Icons.delete_outline_rounded : Icons.remove_rounded, size: 18),
-                ),
-              ],
+          const SizedBox(width: 12),
+          Expanded(
+            child: SizedBox(
+              height: 84,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, height: 1.35)),
+                  if (item.variation.isNotEmpty)
+                    Text(item.variation, maxLines: 1, style: const TextStyle(fontSize: 12, color: C.muted)),
+                  const Spacer(),
+                  Row(
+                    children: [
+                      Expanded(child: Text(item.lineTotal.label, style: display(15, weight: FontWeight.w700))),
+                      _Stepper(
+                        qty: item.quantity,
+                        busy: busy,
+                        onMinus: () => onQty(item.quantity - 1),
+                        onPlus: () => onQty(item.quantity + 1),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -349,32 +374,103 @@ class _CartLine extends StatelessWidget {
   }
 }
 
+class _Stepper extends StatelessWidget {
+  const _Stepper({required this.qty, required this.busy, required this.onMinus, required this.onPlus});
+  final int qty;
+  final bool busy;
+  final VoidCallback onMinus;
+  final VoidCallback onPlus;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget btn(IconData icon, String label, VoidCallback onTap, {Color color = C.ink}) => Semantics(
+          button: true,
+          label: label,
+          child: InkResponse(
+            onTap: busy ? null : onTap,
+            radius: 22,
+            child: SizedBox(width: 36, height: 36, child: Icon(icon, size: 18, color: busy ? C.faint : color)),
+          ),
+        );
+    return Container(
+      decoration: BoxDecoration(color: C.ground, borderRadius: BorderRadius.circular(R.chip)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          qty == 1
+              ? btn(Icons.delete_outline_rounded, context.tr('احذف', 'Remove'), onMinus, color: C.accentText)
+              : btn(Icons.remove_rounded, context.tr('أنقص الكمية', 'Decrease quantity'), onMinus),
+          SizedBox(
+            width: 22,
+            child: Text('$qty', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+          ),
+          btn(Icons.add_rounded, context.tr('زِد الكمية', 'Increase quantity'), onPlus, color: C.primary),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepTitle extends StatelessWidget {
+  const _StepTitle({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(children: [
+          Icon(icon, size: 18, color: C.primary),
+          const SizedBox(width: 6),
+          Text(text, style: display(15)),
+        ]),
+      );
+}
+
+class _DeliveryStrip extends ConsumerWidget {
+  const _DeliveryStrip();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final note = ref.watch(configProvider).valueOrNull?.deliveryRiyadh ??
+        context.tr('داخل الرياض: يوصلك اليوم إذا طلبت قبل ٣ العصر', 'Riyadh: same-day delivery before 3 PM');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(color: C.mint, borderRadius: BorderRadius.circular(14)),
+      child: Row(children: [
+        const Icon(Icons.local_shipping_outlined, size: 18, color: C.primary),
+        const SizedBox(width: 8),
+        Expanded(child: Text(note, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: C.primaryDeep))),
+      ]),
+    );
+  }
+}
+
 class _LoginPrompt extends StatelessWidget {
   const _LoginPrompt({required this.onTap});
   final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) => Material(
-        color: C.mint,
-        borderRadius: BorderRadius.circular(R.card),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(R.card),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                const Icon(Icons.phone_iphone_rounded, color: C.primary),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    context.tr('سجّل برقم جوالك عشان نكمل الطلب ونوصل لك التحديثات',
-                        'Sign in with your mobile number to place the order and get updates'),
-                    style: const TextStyle(fontWeight: FontWeight.w600, color: C.primaryDeep),
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(R.card)),
+        child: Row(
+          children: [
+            const CircleAvatar(radius: 22, backgroundColor: C.mint, child: Icon(Icons.phone_iphone_rounded, color: C.primary)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(context.tr('باقي خطوة وحدة', 'One step left'), style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Text(
+                    context.tr('سجّل برقم جوالك عشان نكمل الطلب ونوصل لك التحديثات', 'Sign in with your mobile to place the order and get updates'),
+                    style: const TextStyle(fontSize: 12, color: C.muted),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+            TextButton(onPressed: onTap, child: Text(context.tr('دخول', 'Sign in'))),
+          ],
         ),
       );
 }
@@ -481,26 +577,16 @@ class _OptionTile extends StatelessWidget {
   }
 }
 
-class _Summary extends StatelessWidget {
-  const _Summary({
-    required this.cart,
-    required this.busy,
-    required this.label,
-    required this.onPressed,
-    required this.showConsent,
-  });
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({required this.cart});
   final Cart cart;
-  final bool busy;
-  final String label;
-  final VoidCallback onPressed;
-  final bool showConsent;
 
-  Widget _row(String a, String b) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
+  Widget _row(String a, String b, {Color? color}) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
         child: Row(
           children: [
-            Expanded(child: Text(a, style: const TextStyle(fontSize: 13, color: C.muted))),
-            Text(b, style: const TextStyle(fontSize: 13, color: C.muted)),
+            Expanded(child: Text(a, style: TextStyle(fontSize: 13, color: color ?? C.muted))),
+            Text(b, style: TextStyle(fontSize: 13, color: color ?? C.ink, fontWeight: FontWeight.w600)),
           ],
         ),
       );
@@ -508,37 +594,72 @@ class _Summary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, kTabBarClearance - 10),
-      decoration: const BoxDecoration(
-        color: C.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        boxShadow: [BoxShadow(color: Color(0x1013201F), blurRadius: 24, offset: Offset(0, -6))],
-      ),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(R.card)),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
           _row(context.tr('المنتجات (${cart.itemsCount})', 'Items (${cart.itemsCount})'), cart.subtotal.label),
           _row(
             context.tr('الشحن', 'Shipping'),
-            cart.needsShipping && cart.rates.isEmpty ? context.tr('بعد إضافة العنوان', 'After adding the address') : cart.shipping.label,
+            cart.needsShipping && cart.rates.isEmpty
+                ? context.tr('بعد إضافة العنوان', 'After adding the address')
+                : (cart.shipping.isZero ? context.tr('مجاني', 'Free') : cart.shipping.label),
           ),
           for (final f in cart.fees) _row(f.name, f.total.label),
-          if (!cart.discount.isZero) _row(context.tr('الخصم', 'Discount'), '- ${cart.discount.label}'),
-          const Divider(color: C.line, height: 12),
-          Row(
+          if (!cart.discount.isZero) _row(context.tr('الخصم', 'Discount'), '- ${cart.discount.label}', color: C.success),
+          const Divider(color: C.line, height: 14),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                Expanded(child: Text(context.tr('الإجمالي', 'Total'), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
+                Text(cart.total.label, style: display(18, weight: FontWeight.w700)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Compact bar that floats just above the tab bar: total + main button.
+class _CheckoutBar extends StatelessWidget {
+  const _CheckoutBar({required this.total, required this.busy, required this.label, required this.onPressed});
+  final String total;
+  final bool busy;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: C.surface,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [BoxShadow(color: Color(0x1A13201F), blurRadius: 24, offset: Offset(0, 6))],
+      ),
+      child: Row(
+        children: [
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: Text(context.tr('الإجمالي', 'Total'), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
-              Text(cart.total.label, style: display(22, weight: FontWeight.w700)),
+              Text(context.tr('الإجمالي', 'Total'), style: const TextStyle(fontSize: 12, color: C.muted)),
+              Text(total, style: display(20, weight: FontWeight.w700)),
             ],
           ),
-          const SizedBox(height: 10),
-          FilledButton(
-            onPressed: busy ? null : onPressed,
-            child: busy && label.isEmpty
-                ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
-                : Text(label.isEmpty ? '...' : label),
+          const SizedBox(width: 12),
+          Expanded(
+            child: FilledButton(
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+              onPressed: busy ? null : onPressed,
+              child: busy
+                  ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+                  : FittedBox(child: Text(label)),
+            ),
           ),
-          if (showConsent) const PolicyConsentLine(),
         ],
       ),
     );
