@@ -815,8 +815,15 @@ class _AddressSheetState extends ConsumerState<_AddressSheet> {
       'address_1': v['address_1'],
       'address_2': v['address_2'],
       'city': city,
-      'state': '',
-      'postcode': '',
+      // The store's checkout requires a region and a postal code.
+      'state': (_loc?.region ?? '').isNotEmpty
+          ? _loc!.region
+          : ((widget.cart.shippingAddress['state'] ?? '').toString().isNotEmpty
+              ? widget.cart.shippingAddress['state'].toString()
+              : city),
+      'postcode': (_loc?.postcode ?? '').isNotEmpty
+          ? _loc!.postcode
+          : (widget.cart.shippingAddress['postcode'] ?? '').toString(),
       'country': 'SA',
       'phone': v['phone'],
     };

@@ -11,6 +11,8 @@ class PickedLocation {
     this.city = '',
     this.district = '',
     this.street = '',
+    this.region = '',
+    this.postcode = '',
   });
 
   final double lat;
@@ -19,6 +21,8 @@ class PickedLocation {
   final String city;
   final String district;
   final String street;
+  final String region;
+  final String postcode;
 
   String get mapsUrl => 'https://maps.google.com/?q=$lat,$lng';
 
@@ -57,7 +61,7 @@ class LocationService {
     final pos = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 15)),
     );
-    var city = '', district = '', street = '';
+    var city = '', district = '', street = '', region = '', postcode = '';
     try {
       // Arabic names on purpose: the store's shipping rules match Arabic city names (e.g. الرياض).
       await setLocaleIdentifier('ar_SA');
@@ -67,6 +71,8 @@ class LocationService {
         city = (m.locality ?? '').isNotEmpty ? m.locality! : (m.administrativeArea ?? '');
         district = (m.subLocality ?? '').isNotEmpty ? m.subLocality! : (m.subAdministrativeArea ?? '');
         street = m.thoroughfare ?? m.street ?? '';
+        region = m.administrativeArea ?? '';
+        postcode = (m.postalCode ?? '').replaceAll(RegExp(r'[^0-9]'), '');
       }
     } catch (_) {
       // Reverse geocoding is best effort; the pin itself is what matters.
@@ -78,6 +84,8 @@ class LocationService {
       city: city,
       district: district,
       street: street,
+      region: region,
+      postcode: postcode,
     );
   }
 

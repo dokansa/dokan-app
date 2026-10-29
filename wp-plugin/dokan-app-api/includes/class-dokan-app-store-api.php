@@ -19,6 +19,13 @@ class Dokan_App_Store_API {
 	 * Hooks.
 	 */
 	public static function init() {
+		// The website's checkout asks for a region and a postal code; app customers pick their
+		// location on the map instead, so these two are optional for app orders (region = city).
+		add_filter( 'woocommerce_default_address_fields', array( __CLASS__, 'relax_address_fields' ), 9999 );
+		add_filter( 'woocommerce_get_country_locale', array( __CLASS__, 'relax_locale' ), 9999 );
+		add_filter( 'woocommerce_billing_fields', array( __CLASS__, 'relax_prefixed_fields' ), 9999 );
+		add_filter( 'woocommerce_shipping_fields', array( __CLASS__, 'relax_prefixed_fields' ), 9999 );
+		add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( __CLASS__, 'fill_region' ), 5, 1 );
 		add_filter( 'woocommerce_store_api_disable_nonce_check', array( __CLASS__, 'maybe_disable_nonce' ), 10, 1 );
 		add_action( 'woocommerce_blocks_loaded', array( __CLASS__, 'register_extensions' ) );
 		add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( __CLASS__, 'tag_order_from_request' ), 10, 2 );
@@ -100,6 +107,54 @@ class Dokan_App_Store_API {
 			}
 		} catch ( \Throwable $e ) {
 			Dokan_App_Helpers::log( 'Store API extension registration failed: ' . $e->getMessage() );
+		}
+	}
+
+	public static function relax_address_fields( $fields ) {
+		if ( Dokan_App_Helpers::is_app_request() ) {
+			foreach ( array( 'postcode', 'state' ) as $k ) {
+				if ( isset( $fields[ $k ] ) ) {
+					$fields[ $k ]['required'] = false;
+				}
+			}
+		}
+		return $fields;
+	}
+
+	public static function relax_prefixed_fields( $fields ) {
+		if ( Dokan_App_Helpers::is_app_request() && is_array( $fields ) ) {
+			foreach ( $fields as $k => $f ) {
+				if ( preg_match( '/_(postcode|state)$/', (string) $k ) ) {
+					$fields[ $k ]['required'] = false;
+				}
+			}
+		}
+		return $fields;
+	}
+
+	public static function relax_locale( $locale ) {
+		if ( Dokan_App_Helpers::is_app_request() && is_array( $locale ) ) {
+			foreach ( array( 'postcode', 'state' ) as $k ) {
+				$locale['SA'][ $k ]['required'] = false;
+			}
+		}
+		return $locale;
+	}
+
+	/**
+	 * App orders without a region get the city as region, so the order screen looks complete.
+	 *
+	 * @param WC_Order $order Order.
+	 */
+	public static function fill_region( $order ) {
+		if ( ! Dokan_App_Helpers::is_app_request() || ! $order instanceof WC_Order ) {
+			return;
+		}
+		if ( '' === (string) $order->get_shipping_state() && '' !== (string) $order->get_shipping_city() ) {
+			$order->set_shipping_state( $order->get_shipping_city() );
+		}
+		if ( '' === (string) $order->get_billing_state() && '' !== (string) $order->get_billing_city() ) {
+			$order->set_billing_state( $order->get_billing_city() );
 		}
 	}
 
