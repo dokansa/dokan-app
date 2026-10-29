@@ -1,7 +1,7 @@
 name: dokan_app
 description: تطبيق متجر دكان السعودية لمستلزمات الحيوانات الأليفة
 publish_to: "none"
-version: 1.0.0+22
+version: 1.0.0+30
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
