@@ -9,7 +9,7 @@ J='Content-Type: application/json'
 api() { curl -s -H "Cookie: $CK" -H "$J" "$@"; }
 note() { echo "$*"; echo "$*" >> "$GITHUB_STEP_SUMMARY"; }
 
-api -X POST "$BASE/wp-json/dokan-app/v1/auth/otp/request" -d "{\"phone\":\"$PHONE\",\"channel\":\"sms\"}" >/dev/null
+note "otp: $(api -X POST "$BASE/wp-json/dokan-app/v1/auth/otp/request" -d "{\"phone\":\"$PHONE\",\"channel\":\"sms\"}" | head -c 200)"
 TOK=$(api -X POST "$BASE/wp-json/dokan-app/v1/auth/otp/verify" -d "{\"phone\":\"$PHONE\",\"code\":\"123456\",\"name\":\"تجربة التطبيق\"}" | jq -r '.token // empty')
 [ -n "$TOK" ] || { note "login failed"; exit 1; }
 H=$(mktemp)
