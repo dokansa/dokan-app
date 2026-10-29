@@ -150,7 +150,7 @@ jobs:
               git config user.email "dokansa36@gmail.com"
               git add pubspec.yaml
               git commit -m "Release $NEXT [skip ci]"
-              git pull --rebase && git push
+              git push || { git pull --rebase --autostash && git push; }
               echo "::warning title=release::New release $NEXT — install the new APK once"
             else
               { grep -A25 "What went wrong" release.log; grep -E "^e: |error:|FAILURE|Exception" release.log; grep -v '^\s*$' release.log | tail -8; } | grep -v '^\s*$' | head -60 | sed 's/^/::error title=release::/'
