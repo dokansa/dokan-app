@@ -835,10 +835,25 @@ class Dokan_App_REST {
 		} catch ( \Throwable $e ) {
 			$gateways = array();
 		}
+		// Friendly names when a gateway has no title (Tamara) or only an English one.
+		$names = array(
+			'tamara'  => array( 'قسّمها مع تمارا', 'Split it with Tamara' ),
+			'tabby'   => array( 'قسّمها على 4 دفعات مع تابي', 'Pay in 4 with Tabby' ),
+			'cod'     => array( 'الدفع عند الاستلام', 'Cash on delivery' ),
+		);
 		foreach ( $gateways as $id => $g ) {
+			$title = trim( wp_strip_all_tags( (string) $g->get_title() ) );
+			if ( '' === $title ) {
+				$title = trim( wp_strip_all_tags( (string) $g->get_method_title() ) );
+			}
+			foreach ( $names as $k => $n ) {
+				if ( false !== strpos( (string) $id, $k ) && ( '' === $title || ( ! Dokan_App_Helpers::is_en() && ! preg_match( '/\p{Arabic}/u', $title ) ) ) ) {
+					$title = Dokan_App_Helpers::t( $n[0], $n[1] );
+				}
+			}
 			$out[] = array(
 				'id'          => (string) $id,
-				'title'       => wp_strip_all_tags( (string) $g->get_title() ),
+				'title'       => $title,
 				'description' => trim( wp_strip_all_tags( (string) $g->get_description() ) ),
 			);
 		}
