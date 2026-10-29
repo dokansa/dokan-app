@@ -892,7 +892,36 @@ class Dokan_App_REST {
 				if ( '' === trim( $q ) ) {
 					return array( 'query' => '', 'product_ids' => array(), 'total' => 0 );
 				}
-				$res          = Dokan_App_Search::search_response( $q, null, false, true, 40 );
+				$res = Dokan_App_Search::search_response( $q, null, false, true, 40 );
+				if ( empty( $res['product_ids'] ) ) {
+					// Packages are printed in English while the Arabic catalogue spells brands in
+					// Arabic: also search the English names, then the brand alone, and bring back
+					// the current language's copy of each product.
+					$tries = array( $q );
+					$words = preg_split( '/\s+/u', $q );
+					if ( count( $words ) > 2 ) {
+						$tries[] = implode( ' ', array_slice( $words, 0, 3 ) );
+						$tries[] = implode( ' ', array_slice( $words, 0, 2 ) );
+					}
+					$cur = Dokan_App_Helpers::lang();
+					foreach ( $tries as $try ) {
+						foreach ( array_unique( array( $cur, 'en', 'ar' ) ) as $lg ) {
+							$r = Dokan_App_Helpers::with_lang( $lg, function () use ( $try ) {
+								return Dokan_App_Search::search_response( $try, null, false, false, 40 );
+							} );
+							if ( ! empty( $r['product_ids'] ) ) {
+								$ids = array();
+								foreach ( $r['product_ids'] as $id ) {
+									$t     = function_exists( 'pll_get_post' ) ? (int) pll_get_post( (int) $id, $cur ) : 0;
+									$ids[] = $t > 0 ? $t : (int) $id;
+								}
+								$res['product_ids'] = array_values( array_unique( $ids ) );
+								$res['total']       = count( $res['product_ids'] );
+								break 2;
+							}
+						}
+					}
+				}
 				$res['query'] = $q;
 				return $res;
 			}
