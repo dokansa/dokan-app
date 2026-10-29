@@ -232,7 +232,7 @@ class AccountScreen extends ConsumerWidget {
           const SizedBox(height: 12),
           Center(
             child: Text(
-              context.tr('دكان · نسخة تجريبية · تحديث ٣', 'Dokan · test version · update 3'),
+              context.tr('دكان · نسخة تجريبية على المتجر الحقيقي', 'Dokan · test version on the live store'),
               style: const TextStyle(fontSize: 12, color: C.faint),
             ),
           ),

@@ -1,4 +1,4 @@
-# Android test app (com.dokansa.shop.test), connected to staging.
+# Android test app (com.dokansa.shop.test), connected to the real store dokansa.com.
 #
 # With the SHOREBIRD_TOKEN secret set, app changes reach installed phones automatically:
 #   - first run (or mode=release, or after native changes): a new APK is built and published
@@ -38,7 +38,8 @@ jobs:
         working-directory: app
         shell: bash
     env:
-      STORE_URL: https://staging.dokansa.com
+      # The test app now runs against the real store (real orders and payments).
+      STORE_URL: https://dokansa.com
       SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
       MODE: ${{ github.event.inputs.mode || 'auto' }}
     steps:
@@ -92,7 +93,7 @@ jobs:
       - name: Build settings
         run: |
           STG=""
-          if [ -n "${{ secrets.STAGING_KEY }}" ]; then STG=$(printf '%s' "${{ secrets.STAGING_KEY }}" | sha256sum | cut -d' ' -f1); fi
+          case "$STORE_URL" in *staging.*) if [ -n "${{ secrets.STAGING_KEY }}" ]; then STG=$(printf '%s' "${{ secrets.STAGING_KEY }}" | sha256sum | cut -d' ' -f1); fi;; esac
           echo "DEFINES=--dart-define=STORE_URL=$STORE_URL --dart-define=STAGING_COOKIE=$STG --dart-define=FIREBASE_APP_ID=1:917838520906:android:1f7914eddcd814f933fcb3" >> "$GITHUB_ENV"
           echo "APP_VERSION=$(grep -E '^version:' pubspec.yaml | awk '{print $2}')" >> "$GITHUB_ENV"
 
