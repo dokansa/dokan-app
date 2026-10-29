@@ -18,6 +18,7 @@ import 'screens/product_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/support_screen.dart';
 import 'screens/complaints_screens.dart';
+import 'screens/visual_search_screen.dart';
 import 'state/providers.dart';
 import 'theme.dart';
 
@@ -55,6 +56,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/search',
         parentNavigatorKey: rootNavigatorKey,
         builder: (_, s) => SearchScreen(initial: s.uri.queryParameters['q'] ?? ''),
+      ),
+      GoRoute(
+        path: '/search-photo',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, s) => VisualSearchScreen(camera: s.uri.queryParameters['src'] != 'gallery'),
       ),
       GoRoute(
         path: '/assistant',

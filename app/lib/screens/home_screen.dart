@@ -175,6 +175,12 @@ class _SearchBar extends StatelessWidget {
                         child: Text(context.tr('وش تدور؟ أكل، رمل، ألعاب…', 'What are you looking for?'),
                             maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: C.muted, fontSize: 15)),
                       ),
+                      IconButton(
+                        tooltip: context.tr('البحث بالصورة', 'Search by photo'),
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.photo_camera_outlined, color: C.primary),
+                        onPressed: () => context.push('/search-photo'),
+                      ),
                     ],
                   ),
                 ),

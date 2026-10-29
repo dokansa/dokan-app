@@ -81,7 +81,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               hintText: context.tr('مثلاً: أكل رطب لقطة صغيرة', 'e.g. wet food for a kitten'),
               prefixIcon: const Icon(Icons.search_rounded),
               suffixIcon: _ctrl.text.isEmpty
-                  ? null
+                  ? IconButton(
+                      tooltip: context.tr('البحث بالصورة', 'Search by photo'),
+                      icon: const Icon(Icons.photo_camera_outlined, color: C.primary),
+                      onPressed: () => context.push('/search-photo'),
+                    )
                   : IconButton(
                       tooltip: context.tr('مسح', 'Clear'),
                       icon: const Icon(Icons.close_rounded),

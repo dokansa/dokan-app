@@ -291,6 +291,24 @@ class Dokan_App_REST {
 		// v1.1.
 		register_rest_route(
 			$ns,
+			'/search/barcode',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'search_barcode' ),
+				'permission_callback' => $pub,
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/search/image',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'search_image' ),
+				'permission_callback' => $pub,
+			)
+		);
+		register_rest_route(
+			$ns,
 			'/search',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
@@ -772,6 +790,111 @@ class Dokan_App_REST {
 					(bool) $request->get_param( 'log' ),
 					$per > 0 ? $per : 40
 				);
+			}
+		);
+	}
+
+	/**
+	 * GET /search/barcode?code= — products whose SKU / GTIN matches a scanned barcode.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function search_barcode( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$code = preg_replace( '/[^0-9A-Za-z]/', '', (string) $request->get_param( 'code' ) );
+				if ( strlen( $code ) < 6 || strlen( $code ) > 20 ) {
+					return array( 'product_ids' => array(), 'total' => 0 );
+				}
+				global $wpdb;
+				$like = $wpdb->esc_like( $code );
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+				$rows = $wpdb->get_col(
+					$wpdb->prepare(
+						"SELECT DISTINCT post_id FROM {$wpdb->postmeta} WHERE (meta_key = '_sku' AND (meta_value = %s OR meta_value LIKE %s OR meta_value LIKE %s)) OR (meta_key IN ('_global_unique_id','_gtin','_ean','_barcode') AND meta_value = %s) LIMIT 60",
+						$code,
+						$like . '-%',
+						'0' . $like . '%',
+						$code
+					)
+				);
+				$ids = array();
+				foreach ( array_map( 'intval', (array) $rows ) as $id ) {
+					$p = wc_get_product( $id );
+					if ( ! $p ) {
+						continue;
+					}
+					if ( $p->is_type( 'variation' ) ) {
+						$p = wc_get_product( $p->get_parent_id() );
+					}
+					if ( ! $p || 'publish' !== $p->get_status() ) {
+						continue;
+					}
+					$pid = $p->get_id();
+					if ( function_exists( 'pll_get_post' ) ) {
+						$tr = (int) pll_get_post( $pid, Dokan_App_Helpers::lang() );
+						if ( $tr > 0 && 'publish' === get_post_status( $tr ) ) {
+							$pid = $tr;
+						}
+					}
+					$ids[ $pid ] = wc_get_product( $pid ) && wc_get_product( $pid )->is_in_stock() ? 0 : 1;
+				}
+				asort( $ids ); // In stock first; single cans before cartons comes from SKU order.
+				$ids = array_keys( $ids );
+				return array( 'product_ids' => $ids, 'total' => count( $ids ) );
+			}
+		);
+	}
+
+	/**
+	 * POST /search/image {image: base64, text?: string} — "what is this product?".
+	 * With Claude enabled the photo is described by Claude; otherwise the text the phone read
+	 * from the package (brand, name) is used.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function search_image( $request ) {
+		return self::safe(
+			function () use ( $request ) {
+				$body = self::body( $request );
+				$text = isset( $body['text'] ) && is_string( $body['text'] ) ? sanitize_text_field( $body['text'] ) : '';
+				$q    = '';
+				$img  = isset( $body['image'] ) && is_string( $body['image'] ) ? preg_replace( '#^data:image/[a-z]+;base64,#i', '', $body['image'] ) : '';
+				if ( '' !== $img && strlen( $img ) < 8000000 && class_exists( 'Dokan_App_Claude' ) && Dokan_App_Claude::enabled() && Dokan_App_Search::rate_ok( 'img', 20 ) ) {
+					$bin  = base64_decode( $img, true );
+					$info = $bin ? @getimagesizefromstring( $bin ) : false; // phpcs:ignore
+					if ( $info && in_array( $info['mime'], array( 'image/jpeg', 'image/png', 'image/webp' ), true ) ) {
+						$sys = 'You identify pet-supply products from a customer photo for a Saudi pet store. Reply with ONLY a short search query (max 8 words) in ' . ( Dokan_App_Helpers::is_en() ? 'English' : 'Arabic' ) . ': brand, product type, pet, and flavor/size if visible. Keep brand names in Latin letters. If it is not a pet product, reply with the closest pet-supply category.';
+						$raw = Dokan_App_Claude::request(
+							$sys,
+							array(
+								array(
+									'role'    => 'user',
+									'content' => array(
+										array( 'type' => 'image', 'source' => array( 'type' => 'base64', 'media_type' => $info['mime'], 'data' => $img ) ),
+										array( 'type' => 'text', 'text' => '' !== $text ? 'Text read from the package: ' . $text : 'What product is this?' ),
+									),
+								),
+							),
+							60
+						);
+						if ( is_string( $raw ) ) {
+							$q = trim( sanitize_text_field( $raw ), " \t\n\r\0\x0B\"'." );
+						}
+					}
+				}
+				if ( '' === $q ) {
+					$q = $text;
+				}
+				$q = function_exists( 'mb_substr' ) ? mb_substr( $q, 0, 100 ) : substr( $q, 0, 100 );
+				if ( '' === trim( $q ) ) {
+					return array( 'query' => '', 'product_ids' => array(), 'total' => 0 );
+				}
+				$res          = Dokan_App_Search::search_response( $q, null, false, true, 40 );
+				$res['query'] = $q;
+				return $res;
 			}
 		);
 	}

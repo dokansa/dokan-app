@@ -105,6 +105,20 @@ class AppApi {
 
   Future<void> replyComplaint(int id, String text) async => await _c.post('$_b/complaints/$id/reply', body: {'text': text});
 
+  Future<List<int>> searchBarcode(String code) async {
+    final d = _m(await _c.get('$_b/search/barcode', query: {'code': code}));
+    return [for (final i in (d['product_ids'] as List? ?? const [])) int.tryParse('$i') ?? 0].where((i) => i > 0).toList();
+  }
+
+  /// (query used, product ids)
+  Future<(String, List<int>)> searchImage(String imageB64, String text) async {
+    final d = _m(await _c.post('$_b/search/image', body: {'image': imageB64, 'text': text}));
+    return (
+      '${d['query'] ?? ''}',
+      [for (final i in (d['product_ids'] as List? ?? const [])) int.tryParse('$i') ?? 0].where((i) => i > 0).toList(),
+    );
+  }
+
   Future<SearchResult> search(String q, {String? petId, bool ai = false, bool log = false}) async =>
       SearchResult.fromJson(_m(await _c.get('$_b/search', query: {
         'q': q,
