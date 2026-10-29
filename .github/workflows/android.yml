@@ -10,6 +10,10 @@ name: Android test build
 on:
   push:
     branches: [main]
+    # Only app changes need a build; store-plugin and docs changes don't.
+    paths:
+      - "app/**"
+      - ".github/workflows/android.yml"
   workflow_dispatch:
     inputs:
       mode:
@@ -121,6 +125,11 @@ jobs:
             echo "::warning title=patch::Native changes found — building a new release (install it once)."
           fi
           grep -iE "error|not found|no release" patch.log | head -10 | sed 's/^/::warning title=patch::/' || true
+          if grep -qiE "no (changes|diff)|identical" patch.log; then
+            echo "::notice title=patch::Nothing changed in the app code — no update needed."
+            echo "PATCHED=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
           if [ "$MODE" = "patch" ]; then exit 1; fi
 
       - name: Shorebird release
