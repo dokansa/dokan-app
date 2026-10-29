@@ -1,5 +1,10 @@
-# Builds an Android test APK on every push (and on demand from the Actions tab).
-# Download it from the run's "Artifacts" section and install it on the phone.
+# Android test app (com.dokansa.shop.test), connected to staging.
+#
+# With the SHOREBIRD_TOKEN secret set, app changes reach installed phones automatically:
+#   - first run (or mode=release, or after native changes): a new APK is built and published
+#     on the "test" release page — install it once;
+#   - every later push: a Shorebird patch is sent; phones pick it up on the next app start.
+# Without the secret it just builds a normal APK each time.
 name: Android test build
 
 on:
@@ -7,14 +12,19 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      store_url:
-        description: "Store the app connects to"
-        default: "https://staging.dokansa.com"
-        required: true
+      mode:
+        description: "auto = patch if possible, else release"
+        type: choice
+        options: [auto, release, patch]
+        default: auto
 
 permissions:
   contents: write
   checks: write
+
+concurrency:
+  group: android-test
+  cancel-in-progress: false
 
 jobs:
   apk:
@@ -22,8 +32,11 @@ jobs:
     defaults:
       run:
         working-directory: app
+        shell: bash
     env:
-      STORE_URL: ${{ github.event.inputs.store_url || 'https://staging.dokansa.com' }}
+      STORE_URL: https://staging.dokansa.com
+      SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
+      MODE: ${{ github.event.inputs.mode || 'auto' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -35,6 +48,12 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
+
+      - name: Set up Shorebird
+        if: env.SHOREBIRD_TOKEN != ''
+        uses: shorebirdtech/setup-shorebird@v1
+        with:
           cache: true
 
       - name: Create Android project files
@@ -49,14 +68,14 @@ jobs:
           perl -pi -e 's/minSdk(Version)?\s*=?\s*flutter\.minSdkVersion/minSdk = 23/' "$GRADLE"
           # Test builds install next to the live Play app (com.dokansa.shop).
           perl -pi -e 's/applicationId\s*=?\s*"[^"]+"/applicationId = "com.dokansa.shop.test"/' "$GRADLE"
-          grep -n "applicationId\|minSdk" "$GRADLE"
           bash android_compile_sdk_fix.sh
+          bash android_signing.sh
 
       - run: flutter pub get
 
       - name: App icon
         continue-on-error: true
-        run: dart run flutter_launcher_icons -f flutter_launcher_icons_android.yaml 2>&1 | tee icons.log; test ${PIPESTATUS[0]} -eq 0 || { tail -n 15 icons.log | sed 's/^/::error title=icons::/'; exit 1; }
+        run: dart run flutter_launcher_icons -f flutter_launcher_icons_android.yaml
 
       # Problems are reported as annotations so they can be read through the API.
       - name: Analyze
@@ -66,29 +85,94 @@ jobs:
           grep '^ERROR|' analyze.txt | head -40 | awk -F'|' '{printf "::error file=app/%s,line=%s,col=%s,title=%s::%s\n", $4, $5, $6, $3, $8}' | sed "s#app/$PWD/#app/#"
           ! grep -q '^ERROR|' analyze.txt
 
-      - name: Build APK
-        shell: bash
+      - name: Build settings
         run: |
-          set -o pipefail
           STG=""
           if [ -n "${{ secrets.STAGING_KEY }}" ]; then STG=$(printf '%s' "${{ secrets.STAGING_KEY }}" | sha256sum | cut -d' ' -f1); fi
-          flutter build apk --release --dart-define=STORE_URL=$STORE_URL --dart-define=STAGING_COOKIE=$STG --dart-define=FIREBASE_APP_ID=1:917838520906:android:1f7914eddcd814f933fcb3 2>&1 | tee build.log || {
+          echo "DEFINES=--dart-define=STORE_URL=$STORE_URL --dart-define=STAGING_COOKIE=$STG --dart-define=FIREBASE_APP_ID=1:917838520906:android:1f7914eddcd814f933fcb3" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$(grep -E '^version:' pubspec.yaml | awk '{print $2}')" >> "$GITHUB_ENV"
+
+      # ---------------- Shorebird (automatic updates)
+      - name: Shorebird app id (first time only)
+        if: env.SHOREBIRD_TOKEN != '' && hashFiles('app/shorebird.yaml') == ''
+        run: |
+          shorebird init --force --display-name "Dokan Test" 2>&1 | tail -20
+          test -f shorebird.yaml
+          git config user.name "dokan-ci"
+          git config user.email "dokansa36@gmail.com"
+          git add shorebird.yaml pubspec.yaml
+          git commit -m "Shorebird app id [skip ci]"
+          git push
+          echo "FORCE_RELEASE=1" >> "$GITHUB_ENV"
+
+      - name: Shorebird patch
+        id: patch
+        if: env.SHOREBIRD_TOKEN != '' && env.MODE != 'release' && env.FORCE_RELEASE != '1'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          shorebird patch android --release-version="$APP_VERSION" -- $DEFINES 2>&1 | tee patch.log
+          echo "PATCHED=1" >> "$GITHUB_ENV"
+
+      - name: Explain patch failure
+        if: env.SHOREBIRD_TOKEN != '' && steps.patch.outcome == 'failure'
+        run: |
+          if grep -qiE "native|Java|Kotlin|dependencies changed" patch.log; then
+            echo "::warning title=patch::Native changes found — building a new release (install it once)."
+          fi
+          grep -iE "error|not found|no release" patch.log | head -10 | sed 's/^/::warning title=patch::/' || true
+          if [ "$MODE" = "patch" ]; then exit 1; fi
+
+      - name: Shorebird release
+        if: env.SHOREBIRD_TOKEN != '' && env.PATCHED != '1'
+        run: |
+          set -o pipefail
+          # A release version can be used only once. If this one already exists (native changes
+          # since it), move to the next build number and save it in pubspec so patches follow it.
+          if ! shorebird release android --artifact=apk -- $DEFINES 2>&1 | tee release.log; then
+            if grep -qi "already exists" release.log; then
+              NEXT="${APP_VERSION%+*}+${GITHUB_RUN_NUMBER}"
+              perl -pi -e "s/^version: .*/version: $NEXT/" pubspec.yaml
+              shorebird release android --artifact=apk -- $DEFINES 2>&1 | tee release.log
+              git config user.name "dokan-ci"
+              git config user.email "dokansa36@gmail.com"
+              git add pubspec.yaml
+              git commit -m "Release $NEXT [skip ci]"
+              git pull --rebase && git push
+              echo "::warning title=release::New release $NEXT — install the new APK once"
+            else
+              grep -iE "error|exception|what went wrong" -A6 release.log | head -40 | sed 's/^/::error title=release::/'
+              exit 1
+            fi
+          fi
+          echo "BUILT_APK=1" >> "$GITHUB_ENV"
+
+      # ---------------- Plain build (no Shorebird token yet)
+      - name: Build APK
+        if: env.SHOREBIRD_TOKEN == ''
+        run: |
+          set -o pipefail
+          flutter build apk --release $DEFINES 2>&1 | tee build.log || {
             { grep -A14 "What went wrong" build.log; grep -E "^e: |error:|Error:" build.log; } | grep -v '^\s*$' | head -45 | sed 's/^/::error title=build::/'
             exit 1
           }
+          echo "BUILT_APK=1" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dokan-app-android
-          path: app/build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 14
-
-      # Also publish the APK on a fixed "test" release page, easy to open from the phone.
-      - name: Publish to the test release
+      - name: Publish APK on the test release page
+        if: env.BUILT_APK == '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk dokan-test.apk
           gh release view test >/dev/null 2>&1 || gh release create test --prerelease --title "نسخة تجريبية" --notes "آخر نسخة تجريبية من تطبيق دكان (أندرويد)."
           gh release upload test dokan-test.apk --clobber
-          gh release edit test --notes "آخر نسخة تجريبية من تطبيق دكان (أندرويد) — متصلة بـ $STORE_URL — بُنيت من ${GITHUB_SHA::7}"
+          UPD=""
+          if [ -n "$SHOREBIRD_TOKEN" ]; then UPD=" — التحديثات توصل تلقائياً"; fi
+          gh release edit test --notes "آخر نسخة تجريبية من تطبيق دكان (أندرويد) — متصلة بـ $STORE_URL — بُنيت من ${GITHUB_SHA::7}$UPD"
+
+      - name: Note the patch on the release page
+        if: env.PATCHED == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit test --notes "آخر نسخة تجريبية من تطبيق دكان (أندرويد) — متصلة بـ $STORE_URL — آخر تحديث تلقائي من ${GITHUB_SHA::7} (افتح التطبيق مرتين)"
