@@ -142,7 +142,10 @@ jobs:
             if grep -qi "already exists" release.log; then
               NEXT="${APP_VERSION%+*}+${GITHUB_RUN_NUMBER}"
               perl -pi -e "s/^version: .*/version: $NEXT/" pubspec.yaml
-              shorebird release android --artifact=apk -- $DEFINES 2>&1 | tee release.log
+              shorebird release android --artifact=apk -- $DEFINES 2>&1 | tee release.log || {
+                grep -v '^\s*$' release.log | tail -30 | sed 's/^/::error title=release2::/'
+                exit 1
+              }
               git config user.name "dokan-ci"
               git config user.email "dokansa36@gmail.com"
               git add pubspec.yaml
@@ -150,7 +153,7 @@ jobs:
               git pull --rebase && git push
               echo "::warning title=release::New release $NEXT — install the new APK once"
             else
-              grep -iE "error|exception|what went wrong" -A6 release.log | head -40 | sed 's/^/::error title=release::/'
+              grep -v '^\s*$' release.log | tail -30 | sed 's/^/::error title=release::/'
               exit 1
             fi
           fi
