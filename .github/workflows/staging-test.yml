@@ -5,6 +5,8 @@ on:
       products:
         description: "id:qty list"
         default: "5972:2"
+permissions:
+  contents: write
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,4 +16,10 @@ jobs:
         env:
           STAGING_KEY: ${{ secrets.STAGING_KEY }}
           PRODUCTS: ${{ github.event.inputs.products }}
-        run: bash tools/staging-checkout-test.sh
+        run: bash tools/staging-checkout-test.sh 2>&1 | tee result.txt
+      - name: Save result
+        if: always()
+        run: |
+          mkdir -p /tmp/out && cp result.txt /tmp/out/ && cd /tmp/out && git init -q && git checkout -q -b test-results
+          git config user.name "dokan-ci" && git config user.email "dokansa36@gmail.com"
+          git add -A && git commit -qm "result" && git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" test-results
