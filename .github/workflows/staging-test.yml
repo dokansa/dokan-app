@@ -5,6 +5,9 @@ on:
       products:
         description: "id:qty list"
         default: "5972:2"
+      payment:
+        description: "payment method id"
+        default: "cod"
 permissions:
   contents: write
 jobs:
@@ -16,6 +19,7 @@ jobs:
         env:
           STAGING_KEY: ${{ secrets.STAGING_KEY }}
           PRODUCTS: ${{ github.event.inputs.products }}
+          PAYMENT: ${{ github.event.inputs.payment }}
         run: bash tools/staging-checkout-test.sh 2>&1 | tee result.txt
       - name: Save result
         if: always()

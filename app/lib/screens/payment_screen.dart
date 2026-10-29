@@ -42,8 +42,24 @@ class _PaymentScreenState extends State<PaymentScreen> {
         onUrlChange: (c) {
           if (c.url != null) _check(c.url!);
         },
-      ))
-      ..loadRequest(Uri.parse(widget.args.url));
+      ));
+    _load();
+  }
+
+  Future<void> _load() async {
+    // Staging is locked to visitors without the preview cookie; the gateway sends the customer
+    // back to the store after paying, so the WebView needs the same cookie the API calls use.
+    if (AppConfig.stagingCookie.isNotEmpty) {
+      try {
+        await WebViewCookieManager().setCookie(WebViewCookie(
+          name: 'dk_stg',
+          value: AppConfig.stagingCookie,
+          domain: Uri.parse(AppConfig.storeUrl).host,
+          path: '/',
+        ));
+      } catch (_) {}
+    }
+    await _web.loadRequest(Uri.parse(widget.args.url));
   }
 
   NavigationDecision _check(String url) {

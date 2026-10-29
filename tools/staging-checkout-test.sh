@@ -27,9 +27,9 @@ done
 
 try() {
   local label="$1" addr="$2"
-  local body="{\"billing_address\":$(echo "$addr" | jq -c '. + {email:"app-test@example.com"}'),\"shipping_address\":$addr,\"payment_method\":\"cod\",\"customer_note\":\"طلب تجربة من التطبيق — تجاهله\"${EXTRA:-}}"
+  local body="{\"billing_address\":$(echo "$addr" | jq -c '. + {email:"app-test@example.com"}'),\"shipping_address\":$addr,\"payment_method\":\"${PAYMENT:-cod}\",\"customer_note\":\"طلب تجربة من التطبيق — تجاهله\"${EXTRA:-}}"
   local R; R=$(S -X POST "$BASE/wp-json/wc/store/v1/checkout" -d "$body")
-  note "checkout [$label] → $(echo "$R" | jq -r 'if .order_id then "ORDER #\(.order_id) status \(.status) payment \(.payment_method // "")" else "\(.code): \(.message)" end')"
+  note "checkout [$label] → $(echo "$R" | jq -r 'if .order_id then "ORDER #\(.order_id) status \(.status) redirect \((.payment_result.redirect_url // "")[0:60]) result \(.payment_result.payment_status // "")" else "\(.code): \(.message)" end')"
   echo "$R" | jq -r '.data.params // empty' | head -20
   echo "$R" | jq -e '.order_id' >/dev/null 2>&1
 }

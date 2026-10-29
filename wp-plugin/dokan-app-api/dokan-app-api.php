@@ -38,6 +38,7 @@ require_once DOKAN_APP_DIR . 'includes/class-dokan-app-claude.php';
 require_once DOKAN_APP_DIR . 'includes/class-dokan-app-rest.php';
 require_once DOKAN_APP_DIR . 'includes/class-dokan-app-admin.php';
 require_once DOKAN_APP_DIR . 'includes/class-dokan-app-complaints.php';
+require_once DOKAN_APP_DIR . 'includes/class-dokan-app-staging-pay.php';
 
 /**
  * Declare HPOS (custom order tables) compatibility.
