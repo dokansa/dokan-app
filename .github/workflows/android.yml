@@ -74,6 +74,15 @@ jobs:
           # Test builds install next to the live Play app (com.dokansa.shop).
           perl -pi -e 's/applicationId\s*=?\s*"[^"]+"/applicationId = "com.dokansa.shop.test"/' "$GRADLE"
           bash android_compile_sdk_fix.sh
+          # ML Kit text recognition: only the Latin model is bundled; ignore the other script packs.
+          cat >> android/app/proguard-rules.pro <<'RULES'
+-dontwarn com.google.mlkit.vision.text.chinese.**
+-dontwarn com.google.mlkit.vision.text.devanagari.**
+-dontwarn com.google.mlkit.vision.text.japanese.**
+-dontwarn com.google.mlkit.vision.text.korean.**
+RULES
+          GRADLE_APP=$(ls android/app/build.gradle* | head -1)
+          grep -q "proguard-rules.pro" "$GRADLE_APP" || perl -0pi -e 's/(release\s*\{)/$1\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")/' "$GRADLE_APP"
           bash android_signing.sh
 
       - run: flutter pub get
