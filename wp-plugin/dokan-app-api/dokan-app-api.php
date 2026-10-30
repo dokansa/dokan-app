@@ -3,7 +3,7 @@
  * Plugin Name:       Dokan App API
  * Plugin URI:        https://dokansa.com
  * Description:       واجهة برمجية لتطبيق دكان للجوال: تسجيل الدخول برمز التحقق، الحيوانات الأليفة، الطلبات والتتبع، الإشعارات، البحث الذكي والمساعد، العربية والإنجليزية، وإعدادات التطبيق.
- * Version:           1.4.2
+ * Version:           1.4.3
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Dokan Saudi
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'DOKAN_APP_VERSION', '1.4.2' );
+define( 'DOKAN_APP_VERSION', '1.4.3' );
 define( 'DOKAN_APP_FILE', __FILE__ );
 define( 'DOKAN_APP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DOKAN_APP_NS', 'dokan-app/v1' );

@@ -434,7 +434,7 @@ class Dokan_App_Claude {
 			}
 		}
 		$r  = Dokan_App_Search::run( $c, $ctx, 15, $last );
-		$fb = self::fallback( $c, $r, $ctx );
+		$fb = self::fallback( $c, $r, $ctx, $last );
 		if ( $on ) {
 			$ans = self::chat( $messages, $pet, self::candidates( $r['ids'] ) );
 			if ( is_array( $ans ) ) {
@@ -595,7 +595,85 @@ class Dokan_App_Claude {
 	 * @param array $ctx Context.
 	 * @return array
 	 */
-	private static function fallback( $c, $r, $ctx ) {
+	/**
+	 * Expert tip + preferred words for common needs (no AI needed).
+	 *
+	 * @param string $text Customer text.
+	 * @param array  $c    Concepts.
+	 * @return array {tip:string, prefer:string[]}
+	 */
+	private static function advice( $text, $c ) {
+		$n     = Dokan_App_Search::normalize( $text );
+		$has   = function ( $words ) use ( $n ) {
+			foreach ( $words as $w ) {
+				if ( false !== strpos( $n, Dokan_App_Search::normalize( $w ) ) ) {
+					return true;
+				}
+			}
+			return false;
+		};
+		$types = (array) $c['types'];
+		$pets  = (array) $c['pets'];
+		$cat   = in_array( 'cat', $pets, true ) || empty( $pets );
+		$tips  = array();
+		$pref  = array();
+		if ( in_array( 'litter', $types, true ) || $has( array( 'رمل', 'litter' ) ) ) {
+			$smell = $has( array( 'ريحه', 'رائحه', 'ريحة', 'رائحة', 'يريح', 'smell', 'odor', 'odour' ) );
+			$dust  = $has( array( 'غبار', 'dust' ) );
+			if ( $smell ) {
+				$tips[] = Dokan_App_Helpers::t( 'للريحة: الرمل المتكتل (بنتونايت) أو اللي فيه كربون نشط يمسك الريحة أحسن، وغيّر الرمل كامل كل أسبوعين تقريبًا.', 'For smell: clumping (bentonite) or activated-carbon litter locks odour best; replace it fully about every two weeks.' );
+				$pref   = array_merge( $pref, array( 'كربون', 'charcoal', 'carbon', 'متكتل', 'clump', 'بنتونايت', 'bentonite', 'معطر', 'odor', 'odour', 'لافندر', 'lavender' ) );
+			}
+			if ( $dust ) {
+				$tips[] = Dokan_App_Helpers::t( 'ولغبار أقل: رمل التوفو أو الكريستال تقريبًا بدون غبار ومناسب للقطط الحساسة.', 'For less dust: tofu or crystal litter is almost dust-free and kind to sensitive cats.' );
+				$pref   = array_merge( $pref, array( 'توفو', 'tofu', 'كريستال', 'crystal', 'غبار', 'dust', 'سيليكا', 'silica' ) );
+			}
+			if ( ! $smell && ! $dust ) {
+				$tips[] = Dokan_App_Helpers::t( 'الرمل المتكتل أسهل في التنظيف، والتوفو أخف وقابل للتصريف.', 'Clumping litter is easiest to clean; tofu litter is lighter and flushable.' );
+			}
+		}
+		if ( 'kitten' === $c['stage'] || $has( array( 'صغيره', 'صغير', 'كيتن', 'kitten', 'puppy', 'جرو' ) ) ) {
+			$tips[] = $cat
+				? Dokan_App_Helpers::t( 'القطط الصغيرة لين عمر سنة تحتاج أكل مخصص «Kitten» غني بالبروتين، وتقدر تجمع بين الناشف والرطب، ووفّر لها ماء نظيف دايم.', 'Kittens up to a year need dedicated "Kitten" food rich in protein; mixing dry and wet is great, with fresh water always available.' )
+				: Dokan_App_Helpers::t( 'الجراء تحتاج أكل «Puppy» مخصص لين عمر سنة تقريبًا.', 'Puppies need dedicated "Puppy" food until about a year old.' );
+			$pref = array_merge( $pref, array( 'kitten', 'كيتن', 'صغيره', 'الصغيرة', 'puppy', 'جرو' ) );
+		}
+		if ( in_array( 'sterilised', (array) $c['health'], true ) || $has( array( 'تسمن', 'سمنه', 'وزن', 'سمين', 'weight', 'fat', 'light' ) ) ) {
+			$tips[] = Dokan_App_Helpers::t( 'للمعقمة أو اللي تزيد وزن: اختار أكل «Sterilised» أو «Light» قليل الدهون، والتزم بالكمية المكتوبة على الكيس وقسّمها على وجبات.', 'For sterilised or overweight pets: pick "Sterilised" or "Light" low-fat food, stick to the bag\'s portion and split it into meals.' );
+			$pref   = array_merge( $pref, array( 'sterilised', 'sterilized', 'معقم', 'light', 'لايت', 'weight', 'وزن' ) );
+		}
+		if ( $has( array( 'هديه', 'هدية', 'gift', 'present' ) ) ) {
+			$tips[] = Dokan_App_Helpers::t( 'للهدية: الألعاب والخدّاشات والمكافآت دايمًا تفرّح، اخترت لك أشياء ضمن ميزانيتك.', 'For a gift: toys, scratchers and treats always delight — here are picks within your budget.' );
+			$pref   = array_merge( $pref, array( 'لعبه', 'لعبة', 'toy', 'خداش', 'scratch', 'مكافا', 'treat' ) );
+		}
+		return array( 'tip' => implode( ' ', $tips ), 'prefer' => $pref );
+	}
+
+	/**
+	 * Put products whose names match the preferred words first (keeps the rest in order).
+	 */
+	private static function prefer_ids( $ids, $words ) {
+		if ( empty( $words ) ) {
+			return $ids;
+		}
+		$score = array();
+		foreach ( $ids as $i => $id ) {
+			$name = Dokan_App_Search::normalize( (string) get_the_title( (int) $id ) );
+			$s    = 0;
+			foreach ( $words as $w ) {
+				if ( false !== strpos( $name, Dokan_App_Search::normalize( $w ) ) ) {
+					$s++;
+				}
+			}
+			$score[ $id ] = array( -$s, $i );
+		}
+		uksort( $score, function ( $a, $b ) use ( $score ) {
+			return $score[ $a ] <=> $score[ $b ];
+		} );
+		return array_keys( $score );
+	}
+
+	private static function fallback( $c, $r, $ctx, $text = '' ) {
 		$t        = array( 'Dokan_App_Helpers', 't' );
 		$topics   = $c['topics'];
 		$has_conc = ! empty( $c['pets'] ) || ! empty( $c['types'] ) || ! empty( $c['brands'] ) || ! empty( $c['keywords'] ) || ! empty( $c['health'] ) || $c['stage'] || $c['on_sale'] || null !== $c['max_price'] || null !== $c['min_price'];
@@ -613,7 +691,15 @@ class Dokan_App_Claude {
 		} elseif ( ! $has_conc ) {
 			$reply = call_user_func( $t, 'هلا! قولي وش تدوّر لحيوانك الأليف (أكل، رمل، ألعاب…) وأساعدك تلقاه.', 'Hi! Tell me what you\'re looking for your pet (food, litter, toys…) and I\'ll help you find it.' );
 		} else {
-			$reply = $r['reply'];
+			$adv = self::advice( $text, $c );
+			if ( '' !== $adv['tip'] && $ids ) {
+				$ids   = array_slice( self::prefer_ids( array_values( array_map( 'intval', $r['ids'] ) ), $adv['prefer'] ), 0, 6 );
+				$reply = $adv['tip'] . ' ' . call_user_func( $t, 'وهذي أنسب اختياراتي لك من دكان:', 'Here are my best picks for you from Dokan:' );
+			} elseif ( $ids ) {
+				$reply = call_user_func( $t, 'أبشر! ', 'Sure! ' ) . $r['reply'] . call_user_func( $t, '. هذي أفضلها:', '. Here are the best ones:' );
+			} else {
+				$reply = $r['reply'] . ' ' . call_user_func( $t, 'جرّب توضح لي أكثر (نوع الحيوان، عمره، الميزانية) أو كلمنا واتساب ونساعدك.', 'Tell me a bit more (pet, age, budget) or message us on WhatsApp and we\'ll help.' );
+			}
 		}
 		$chips = array();
 		foreach ( $r['suggestions'] as $s ) {
