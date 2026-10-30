@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/lang.dart';
 import '../models/models.dart';
@@ -74,10 +75,32 @@ class HomeScreen extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  RoundIconButton(
-                    icon: Icons.support_agent_rounded,
-                    label: context.tr('خدمة العملاء', 'Customer care'),
-                    onTap: () => context.push('/support'),
+                  Tooltip(
+                    message: context.tr('كلمنا واتساب', 'WhatsApp us'),
+                    child: Material(
+                      color: const Color(0xFF25D366),
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: () async {
+                          final n = (config.valueOrNull?.whatsapp ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+                          if (n.isEmpty) {
+                            context.push('/support');
+                            return;
+                          }
+                          final ok = await launchUrl(
+                            Uri.parse('https://wa.me/$n?text=${Uri.encodeComponent(context.tr('السلام عليكم، عندي استفسار', 'Hello, I have a question'))}'),
+                            mode: LaunchMode.externalApplication,
+                          );
+                          if (!ok && context.mounted) context.push('/support');
+                        },
+                        child: const SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: Icon(Icons.chat_rounded, color: Colors.white, size: 24),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),

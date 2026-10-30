@@ -26,6 +26,8 @@ class Dokan_App_Store_API {
 		add_filter( 'woocommerce_billing_fields', array( __CLASS__, 'relax_prefixed_fields' ), 9999 );
 		add_filter( 'woocommerce_shipping_fields', array( __CLASS__, 'relax_prefixed_fields' ), 9999 );
 		add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( __CLASS__, 'fill_region' ), 5, 1 );
+		// Categories without their own image show their best-selling product's photo (app only).
+		add_filter( 'get_term_metadata', array( __CLASS__, 'category_thumb' ), 10, 4 );
 		add_filter( 'woocommerce_store_api_disable_nonce_check', array( __CLASS__, 'maybe_disable_nonce' ), 10, 1 );
 		add_action( 'woocommerce_blocks_loaded', array( __CLASS__, 'register_extensions' ) );
 		add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( __CLASS__, 'tag_order_from_request' ), 10, 2 );
@@ -156,6 +158,60 @@ class Dokan_App_Store_API {
 		if ( '' === (string) $order->get_billing_state() && '' !== (string) $order->get_billing_city() ) {
 			$order->set_billing_state( $order->get_billing_city() );
 		}
+	}
+
+	private static $thumb_busy = false;
+
+	/**
+	 * thumbnail_id for product categories that have none: the best-selling in-stock product
+	 * in the category (or its subcategories). App requests only; cached for a day.
+	 */
+	public static function category_thumb( $value, $term_id, $key, $single ) {
+		if ( 'thumbnail_id' !== $key || self::$thumb_busy || ! Dokan_App_Helpers::is_app_request() ) {
+			return $value;
+		}
+		$term = get_term( $term_id );
+		if ( ! $term || is_wp_error( $term ) || 'product_cat' !== $term->taxonomy ) {
+			return $value;
+		}
+		self::$thumb_busy = true;
+		$own = (int) get_term_meta( $term_id, 'thumbnail_id', true );
+		self::$thumb_busy = false;
+		if ( $own > 0 ) {
+			return $value;
+		}
+		$ck  = 'dokan_app_cat_thumb_' . $term_id;
+		$img = get_transient( $ck );
+		if ( false === $img ) {
+			$img = 0;
+			$ids = get_posts(
+				array(
+					'post_type'      => 'product',
+					'post_status'    => 'publish',
+					'posts_per_page' => 8,
+					'fields'         => 'ids',
+					'meta_key'       => 'total_sales', // phpcs:ignore
+					'orderby'        => 'meta_value_num',
+					'order'          => 'DESC',
+					'tax_query'      => array( array( 'taxonomy' => 'product_cat', 'field' => 'term_id', 'terms' => (int) $term_id, 'include_children' => true ) ), // phpcs:ignore
+					'meta_query'     => array( array( 'key' => '_stock_status', 'value' => 'instock' ) ), // phpcs:ignore
+					'lang'           => '',
+					'no_found_rows'  => true,
+				)
+			);
+			foreach ( $ids as $pid ) {
+				$t = (int) get_post_thumbnail_id( $pid );
+				if ( $t > 0 ) {
+					$img = $t;
+					break;
+				}
+			}
+			set_transient( $ck, (int) $img, DAY_IN_SECONDS );
+		}
+		if ( (int) $img < 1 ) {
+			return $value;
+		}
+		return $single ? array( (string) $img ) : array( (string) $img );
 	}
 
 	/**

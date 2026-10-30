@@ -449,7 +449,7 @@ class Dokan_App_REST {
 					'riyadh_cutoff'        => (string) Dokan_App_Helpers::setting( 'riyadh_cutoff' ),
 					'delivery_note_riyadh' => (string) Dokan_App_Helpers::setting_l( 'delivery_note_riyadh' ),
 					'delivery_note_ksa'    => (string) Dokan_App_Helpers::setting_l( 'delivery_note_ksa' ),
-					'whatsapp'             => (string) Dokan_App_Helpers::setting( 'whatsapp' ),
+					'whatsapp'             => self::whatsapp_number(),
 					'chatwoot'             => array(
 						'base_url'      => untrailingslashit( (string) Dokan_App_Helpers::setting( 'chatwoot_base_url' ) ),
 						'website_token' => (string) Dokan_App_Helpers::setting( 'chatwoot_token' ),
@@ -962,6 +962,27 @@ class Dokan_App_REST {
 				return Dokan_App_Orders::purchased_ids( get_current_user_id() );
 			}
 		);
+	}
+
+	/**
+	 * Store WhatsApp: the app setting, else the number used by the website's WhatsApp button.
+	 *
+	 * @return string
+	 */
+	private static function whatsapp_number() {
+		$n = preg_replace( '/\D+/', '', (string) Dokan_App_Helpers::setting( 'whatsapp' ) );
+		if ( '' === $n ) {
+			$n = (string) get_transient( 'dokan_app_site_wa' );
+			if ( '' === $n ) {
+				$n   = '966564986755'; // dokansa.com's WhatsApp button.
+				$res = wp_remote_get( home_url( '/' ), array( 'timeout' => 8 ) );
+				if ( ! is_wp_error( $res ) && preg_match( '#wa\.me/(\d{9,15})#', (string) wp_remote_retrieve_body( $res ), $m ) ) {
+					$n = $m[1];
+				}
+				set_transient( 'dokan_app_site_wa', $n, DAY_IN_SECONDS );
+			}
+		}
+		return $n;
 	}
 
 	/**
