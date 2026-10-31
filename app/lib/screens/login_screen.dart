@@ -24,7 +24,7 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> with WidgetsBindingObserver {
-  final _smartAuth = SmartAuth();
+  final _smartAuth = SmartAuth.instance;
   bool _listening = false;
   final _phone = TextEditingController();
   final _code = TextEditingController();
@@ -55,8 +55,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with WidgetsBindingOb
     if (_listening) return;
     _listening = true;
     try {
-      final res = await _smartAuth.getSmsCode(useUserConsentApi: true);
-      final text = '${res.code ?? ''} ${res.sms ?? ''}';
+      final res = await _smartAuth.getSmsWithUserConsentApi();
+      final text = '${res.data?.code ?? ''} ${res.data?.sms ?? ''}';
       _autoFill(text);
     } catch (_) {
       // Not available on this phone: the keyboard suggestion still works.
@@ -76,7 +76,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with WidgetsBindingOb
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     try {
-      _smartAuth.removeSmsListener();
+      _smartAuth.removeUserConsentApiListener();
     } catch (_) {}
     _timer?.cancel();
     _phone.dispose();
