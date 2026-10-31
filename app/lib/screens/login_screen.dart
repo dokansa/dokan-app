@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:smart_auth/smart_auth.dart';
 
 import '../api/client.dart';
 import '../l10n/lang.dart';
@@ -22,7 +23,9 @@ class LoginScreen extends ConsumerStatefulWidget {
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> with WidgetsBindingObserver {
+  final _smartAuth = SmartAuth();
+  bool _listening = false;
   final _phone = TextEditingController();
   final _code = TextEditingController();
   final _name = TextEditingController();
@@ -34,7 +37,47 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Timer? _timer;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// Fill the code when it arrives (SMS consent) or when the customer copied it (WhatsApp).
+  void _autoFill(String raw) {
+    final m = RegExp(r'(?<!\d)(\d{6})(?!\d)').firstMatch(raw);
+    if (m == null || !_sent || !mounted || _busy) return;
+    if (_code.text == m.group(1)) return;
+    setState(() => _code.text = m.group(1)!);
+    if (!_needName) _verify();
+  }
+
+  Future<void> _listenSms() async {
+    if (_listening) return;
+    _listening = true;
+    try {
+      final res = await _smartAuth.getSmsCode(useUserConsentApi: true);
+      final text = '${res.code ?? ''} ${res.sms ?? ''}';
+      _autoFill(text);
+    } catch (_) {
+      // Not available on this phone: the keyboard suggestion still works.
+    } finally {
+      _listening = false;
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _sent && _code.text.length < 6) {
+      Clipboard.getData(Clipboard.kTextPlain).then((d) => _autoFill(d?.text ?? '')).catchError((_) {});
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    try {
+      _smartAuth.removeSmsListener();
+    } catch (_) {}
     _timer?.cancel();
     _phone.dispose();
     _code.dispose();
@@ -73,6 +116,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           error: true);
     }
     setState(() => _busy = true);
+    // Start listening before the SMS is sent (Android shows "allow Dokan to read this message").
+    if (channel != 'whatsapp') _listenSms();
     try {
       final used = await ref.read(sessionProvider.notifier).requestOtp(_digits, channel: channel);
       if (!mounted) return;

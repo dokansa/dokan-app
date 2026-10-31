@@ -19,6 +19,7 @@ import 'screens/search_screen.dart';
 import 'screens/support_screen.dart';
 import 'screens/complaints_screens.dart';
 import 'screens/visual_search_screen.dart';
+import 'screens/welcome_screen.dart';
 import 'state/providers.dart';
 import 'theme.dart';
 
@@ -27,7 +28,7 @@ final rootNavigatorKey = GlobalKey<NavigatorState>();
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     navigatorKey: rootNavigatorKey,
-    initialLocation: '/',
+    initialLocation: Onboarding.done ? '/' : '/welcome',
     routes: [
       StatefulShellRoute.indexedStack(
         builder: (context, state, shell) => _Shell(shell: shell),
@@ -56,6 +57,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/search',
         parentNavigatorKey: rootNavigatorKey,
         builder: (_, s) => SearchScreen(initial: s.uri.queryParameters['q'] ?? ''),
+      ),
+      GoRoute(
+        path: '/welcome',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, __) => const WelcomeScreen(),
       ),
       GoRoute(
         path: '/search-photo',

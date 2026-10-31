@@ -177,32 +177,48 @@ class Dokan_App_Store_API {
 		self::$thumb_busy = true;
 		$own = (int) get_term_meta( $term_id, 'thumbnail_id', true );
 		self::$thumb_busy = false;
-		if ( $own > 0 ) {
+		// Keep the store's own image unless it points to a deleted file.
+		if ( $own > 0 && wp_attachment_is_image( $own ) ) {
 			return $value;
 		}
-		$ck  = 'dokan_app_cat_thumb_' . $term_id;
+		$ck  = 'dokan_app_cat_thumb2_' . $term_id;
 		$img = get_transient( $ck );
 		if ( false === $img ) {
 			$img = 0;
-			$ids = get_posts(
-				array(
-					'post_type'      => 'product',
-					'post_status'    => 'publish',
-					'posts_per_page' => 8,
-					'fields'         => 'ids',
-					'meta_key'       => 'total_sales', // phpcs:ignore
-					'orderby'        => 'meta_value_num',
-					'order'          => 'DESC',
-					'tax_query'      => array( array( 'taxonomy' => 'product_cat', 'field' => 'term_id', 'terms' => (int) $term_id, 'include_children' => true ) ), // phpcs:ignore
-					'meta_query'     => array( array( 'key' => '_stock_status', 'value' => 'instock' ) ), // phpcs:ignore
-					'lang'           => '',
-					'no_found_rows'  => true,
-				)
-			);
-			foreach ( $ids as $pid ) {
-				$t = (int) get_post_thumbnail_id( $pid );
-				if ( $t > 0 ) {
-					$img = $t;
+			// Products filed directly in this category first, then its subcategories; best sellers
+			// first, and products that sit in few categories (so a "supplies" category doesn't get a
+			// food bag that is also tagged there).
+			foreach ( array( false, true ) as $children ) {
+				$ids = get_posts(
+					array(
+						'post_type'      => 'product',
+						'post_status'    => 'publish',
+						'posts_per_page' => 20,
+						'fields'         => 'ids',
+						'meta_key'       => 'total_sales', // phpcs:ignore
+						'orderby'        => 'meta_value_num',
+						'order'          => 'DESC',
+						'tax_query'      => array( array( 'taxonomy' => 'product_cat', 'field' => 'term_id', 'terms' => (int) $term_id, 'include_children' => $children ) ), // phpcs:ignore
+						'meta_query'     => array( array( 'key' => '_stock_status', 'value' => 'instock' ) ), // phpcs:ignore
+						'lang'           => '',
+						'no_found_rows'  => true,
+					)
+				);
+				$best = 0;
+				$bestn = PHP_INT_MAX;
+				foreach ( $ids as $rank => $pid ) {
+					$t = (int) get_post_thumbnail_id( $pid );
+					if ( $t < 1 || ! wp_attachment_is_image( $t ) ) {
+						continue;
+					}
+					$n = count( (array) wp_get_post_terms( $pid, 'product_cat', array( 'fields' => 'ids' ) ) ) * 3 + $rank;
+					if ( $n < $bestn ) {
+						$bestn = $n;
+						$best  = $t;
+					}
+				}
+				if ( $best ) {
+					$img = $best;
 					break;
 				}
 			}

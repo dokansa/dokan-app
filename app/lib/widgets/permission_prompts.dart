@@ -10,7 +10,11 @@ import '../theme.dart';
 Future<void> askNotifications(BuildContext context, {bool force = false}) async {
   if (!PushService.available) return;
   final allowed = await PushService.isAllowed();
-  if (allowed == true) return;
+  if (allowed == true) {
+    // Allowed before signing in: link this phone to the customer now.
+    if (context.mounted) await PushService.registerIfAllowed(ProviderScope.containerOf(context, listen: false));
+    return;
+  }
   if (!force && !await PushService.canAsk()) return;
   if (!context.mounted) return;
   final container = ProviderScope.containerOf(context, listen: false);

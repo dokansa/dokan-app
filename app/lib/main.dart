@@ -7,13 +7,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'api/client.dart';
 import 'l10n/lang.dart';
 import 'router.dart';
+import 'screens/welcome_screen.dart';
 import 'services/push_service.dart';
 import 'state/providers.dart';
 import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AppLang.load(await SharedPreferences.getInstance());
+  final prefs = await SharedPreferences.getInstance();
+  await AppLang.load(prefs);
+  await Onboarding.load(prefs);
   await initializeDateFormatting('ar');
   await initializeDateFormatting('en');
   final client = await ApiClient.create();

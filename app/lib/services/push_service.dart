@@ -93,6 +93,9 @@ class PushService {
     } catch (_) {}
   }
 
+  /// Already allowed (e.g. on the welcome screen before signing in): just send the token.
+  static Future<void> registerIfAllowed(ProviderContainer container) => _register(container, ask: false);
+
   /// Shows the system permission dialog, then registers the device. Returns true if allowed.
   static Future<bool> requestAndRegister(ProviderContainer container) async {
     if (!_ready) return false;
