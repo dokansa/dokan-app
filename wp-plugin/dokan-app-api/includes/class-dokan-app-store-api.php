@@ -26,6 +26,9 @@ class Dokan_App_Store_API {
 		add_filter( 'woocommerce_billing_fields', array( __CLASS__, 'relax_prefixed_fields' ), 9999 );
 		add_filter( 'woocommerce_shipping_fields', array( __CLASS__, 'relax_prefixed_fields' ), 9999 );
 		add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( __CLASS__, 'fill_region' ), 5, 1 );
+		// Engraving text from the app goes into the website's own field (custom_design_text),
+		// so the theme saves and shows it exactly like website orders.
+		add_filter( 'rest_request_before_callbacks', array( __CLASS__, 'design_text_in' ), 5, 3 );
 		// Categories without their own image show their best-selling product's photo (app only).
 		add_filter( 'get_term_metadata', array( __CLASS__, 'category_thumb' ), 10, 4 );
 		add_filter( 'woocommerce_store_api_disable_nonce_check', array( __CLASS__, 'maybe_disable_nonce' ), 10, 1 );
@@ -158,6 +161,22 @@ class Dokan_App_Store_API {
 		if ( '' === (string) $order->get_billing_state() && '' !== (string) $order->get_billing_city() ) {
 			$order->set_billing_state( $order->get_billing_city() );
 		}
+	}
+
+	public static function design_text_in( $response, $handler, $request ) {
+		$route = (string) $request->get_route();
+		if ( false === strpos( $route, '/wc/store' ) || ( false === strpos( $route, 'add-item' ) && ! preg_match( '#/cart/items/?$#', $route ) ) ) {
+			return $response;
+		}
+		$text = (string) $request->get_header( 'x_dokan_design_text' );
+		$text = '' !== $text ? rawurldecode( $text ) : (string) $request->get_param( 'custom_design_text' );
+		$text = trim( sanitize_text_field( $text ) );
+		if ( '' !== $text ) {
+			$text = function_exists( 'mb_substr' ) ? mb_substr( $text, 0, 200 ) : substr( $text, 0, 200 );
+			$_POST['custom_design_text']    = wp_slash( $text ); // phpcs:ignore
+			$_REQUEST['custom_design_text'] = wp_slash( $text ); // phpcs:ignore
+		}
+		return $response;
 	}
 
 	private static $thumb_busy = false;

@@ -44,6 +44,7 @@ class _ProductViewState extends ConsumerState<_ProductView> {
   int _image = 0;
   ProductVariation? _variation;
   Product? _variationProduct;
+  final _design = TextEditingController();
   bool _adding = false;
   bool _added = false;
 
@@ -58,6 +59,12 @@ class _ProductViewState extends ConsumerState<_ProductView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) ref.read(recentlyViewedProvider.notifier).add(p.id);
     });
+  }
+
+  @override
+  void dispose() {
+    _design.dispose();
+    super.dispose();
   }
 
   Future<void> _pick(ProductVariation v) async {
@@ -77,11 +84,11 @@ class _ProductViewState extends ConsumerState<_ProductView> {
       final v = _variation;
       final cart = ref.read(cartProvider.notifier);
       try {
-        await cart.add(v?.id ?? p.id, _qty);
+        await cart.add(v?.id ?? p.id, _qty, designText: _design.text);
       } catch (_) {
         // Variations with "any" attributes need the attribute values too.
         if (v == null) rethrow;
-        await cart.add(v.id, _qty, variation: v.attributes);
+        await cart.add(v.id, _qty, variation: v.attributes, designText: _design.text);
       }
       if (!mounted) return;
       setState(() => _added = true);
@@ -182,6 +189,25 @@ class _ProductViewState extends ConsumerState<_ProductView> {
                         ],
                       ),
                       const SizedBox(height: 16),
+                    ],
+                    if (config != null &&
+                        config.designCategoryIds.isNotEmpty &&
+                        p.categoryIds.any(config.designCategoryIds.contains)) ...[
+                      Text(config.designLabel, style: display(15)),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _design,
+                        maxLength: 60,
+                        textInputAction: TextInputAction.done,
+                        decoration: InputDecoration(
+                          hintText: config.designPlaceholder,
+                          prefixIcon: const Icon(Icons.edit_outlined, color: C.primary),
+                          filled: true,
+                          fillColor: C.surface,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
                     ],
                     Row(
                       children: [

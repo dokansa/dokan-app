@@ -59,9 +59,12 @@ class StoreApi {
 
   Future<Cart> cart() async => _cart(await _c.get('$_b/cart'));
 
-  Future<Cart> addItem(int id, int quantity, {List<Map<String, String>>? variation}) async => _cart(await _c.post(
+  Future<Cart> addItem(int id, int quantity, {List<Map<String, String>>? variation, String designText = ''}) async =>
+      _cart(await _c.post(
         '$_b/cart/add-item',
         body: {'id': id, 'quantity': quantity, if (variation != null && variation.isNotEmpty) 'variation': variation},
+        // Engraving text: the store puts it in the website's own design field.
+        headers: designText.trim().isEmpty ? null : {'X-Dokan-Design-Text': Uri.encodeComponent(designText.trim())},
       ));
 
   Future<Cart> updateItem(String key, int quantity) async =>

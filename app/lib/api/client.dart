@@ -107,8 +107,8 @@ class ApiClient {
   Future<dynamic> get(String url, {Map<String, dynamic>? query}) =>
       _send(() => dio.get(url, queryParameters: query));
 
-  Future<dynamic> post(String url, {Object? body}) =>
-      _send(() => dio.post(url, data: body ?? const {}));
+  Future<dynamic> post(String url, {Object? body, Map<String, String>? headers}) =>
+      _send(() => dio.post(url, data: body ?? const {}, options: headers == null ? null : Options(headers: headers)));
 
   Future<dynamic> patch(String url, {Object? body}) =>
       _send(() => dio.patch(url, data: body ?? const {}));

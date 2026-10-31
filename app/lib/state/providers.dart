@@ -108,8 +108,8 @@ class CartNotifier extends AsyncNotifier<Cart> {
     }
   }
 
-  Future<void> add(int id, int qty, {List<Map<String, String>>? variation}) =>
-      _run(() => _api.addItem(id, qty, variation: variation));
+  Future<void> add(int id, int qty, {List<Map<String, String>>? variation, String designText = ''}) =>
+      _run(() => _api.addItem(id, qty, variation: variation, designText: designText));
 
   Future<void> setQuantity(String key, int qty) =>
       _run(() => qty <= 0 ? _api.removeItem(key) : _api.updateItem(key, qty));

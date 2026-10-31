@@ -254,7 +254,11 @@ class Cart {
         image: imgs.isEmpty ? null : ((imgs.first as Map)['thumbnail'] ?? imgs.first['src']) as String?,
         lineTotal: Money.store(t['line_total'], t['currency_minor_unit'] ?? unit),
         variation: [
-          for (final v in (m['variation'] as List? ?? const [])) cleanText((v as Map)['value'])
+          for (final v in (m['variation'] as List? ?? const [])) cleanText((v as Map)['value']),
+          // Extra details such as the engraving text.
+          for (final d in (m['item_data'] as List? ?? const []))
+            if (cleanText((d as Map)['value'] ?? d['display']).isNotEmpty)
+              '${cleanText(d['name'] ?? d['key'])}: ${cleanText(d['value'] ?? d['display'])}',
         ].where((s) => s.isNotEmpty).join(' · '),
       ));
     }
@@ -563,7 +567,15 @@ class StoreConfig {
     this.popularSearches = const [],
     this.petCategories = const {},
     this.assistantEnabled = false,
+    this.designCategoryIds = const [],
+    this.designLabel = '',
+    this.designPlaceholder = '',
   });
+
+  /// Products in these categories take an engraving/design text.
+  final List<int> designCategoryIds;
+  final String designLabel;
+  final String designPlaceholder;
 
   final List<String> otpChannels;
   final List<Policy> policies;
@@ -614,6 +626,11 @@ class StoreConfig {
           if (e.value != null) e.key.toString(): int.tryParse('${e.value}') ?? 0
       },
       assistantEnabled: j['assistant_enabled'] == true,
+      designCategoryIds: [
+        for (final i in ((j['design_text'] as Map?)?['category_ids'] as List? ?? const [])) int.tryParse('$i') ?? 0
+      ].where((i) => i > 0).toList(),
+      designLabel: cleanText((j['design_text'] as Map?)?['label']),
+      designPlaceholder: cleanText((j['design_text'] as Map?)?['placeholder']),
       whatsapp: j['whatsapp']?.toString() ?? '',
       chatwootBase: cw['base_url']?.toString() ?? '',
       chatwootToken: cw['website_token']?.toString() ?? '',

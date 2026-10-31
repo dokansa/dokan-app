@@ -465,6 +465,8 @@ class Dokan_App_REST {
 					'popular_searches'     => array_values( (array) $cached['popular_searches'] ),
 					'pet_categories'       => (object) $cached['pet_categories'],
 					'assistant_enabled'    => Dokan_App_Claude::enabled(),
+					// Engravable products: same field as the website (custom_design_text).
+					'design_text'          => self::design_text_config(),
 					// v1.2.
 					'otp_channels'         => Dokan_App_OTP::channels(),
 					'policies'             => array_values( (array) $cached['policies'] ),
@@ -961,6 +963,34 @@ class Dokan_App_REST {
 			function () {
 				return Dokan_App_Orders::purchased_ids( get_current_user_id() );
 			}
+		);
+	}
+
+	/**
+	 * Categories whose products take a design/engraving text (all languages + subcategories).
+	 *
+	 * @return array
+	 */
+	private static function design_text_config() {
+		$ids = get_transient( 'dokan_app_design_cats' );
+		if ( ! is_array( $ids ) ) {
+			$ids   = array();
+			$terms = get_terms( array( 'taxonomy' => 'product_cat', 'hide_empty' => false, 'lang' => '' ) );
+			foreach ( is_array( $terms ) ? $terms : array() as $t ) {
+				if ( preg_match( '/حفر|engrav|نقش/iu', $t->name . ' ' . $t->slug . ' ' . urldecode( $t->slug ) ) ) {
+					$ids[] = (int) $t->term_id;
+					foreach ( (array) get_term_children( $t->term_id, 'product_cat' ) as $c ) {
+						$ids[] = (int) $c;
+					}
+				}
+			}
+			$ids = array_values( array_unique( $ids ) );
+			set_transient( 'dokan_app_design_cats', $ids, HOUR_IN_SECONDS );
+		}
+		return array(
+			'category_ids' => $ids,
+			'label'        => Dokan_App_Helpers::t( 'اكتب اللي تبيه ينحفر على القلادة', 'What should we engrave on the tag?' ),
+			'placeholder'  => Dokan_App_Helpers::t( 'مثال: اسم حيوانك ورقم جوالك', "e.g. your pet's name and your phone number" ),
 		);
 	}
 
