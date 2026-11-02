@@ -266,6 +266,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                       _OptionTile(
                         title: m.title,
                         subtitle: m.description,
+                        logos: payLogos(m.id, m.title),
                         selected: _method == m.id,
                         onTap: () {
                           setState(() => _method = m.id);
@@ -561,10 +562,36 @@ class _AddressCard extends ConsumerWidget {
   }
 }
 
+/// Brand badges for a payment method, matched from the gateway id/title.
+List<String> payLogos(String id, String title) {
+  final s = '$id $title'.toLowerCase();
+  if (s.contains('tabby') || s.contains('تابي')) return const ['tabby'];
+  if (s.contains('tamara') || s.contains('تمارا')) return const ['tamara'];
+  if (s.contains('cod') || s.contains('الاستلام')) return const [];
+  if (s.contains('myfatoorah') || s.contains('card') || s.contains('mada') || s.contains('الالكتروني') ||
+      s.contains('الإلكتروني') || s.contains('بطاق')) {
+    return [
+      'mada',
+      'visa',
+      'master',
+      if (defaultTargetPlatform == TargetPlatform.iOS) 'apple_pay',
+    ];
+  }
+  if (s.contains('apple')) return const ['apple_pay'];
+  return const [];
+}
+
 class _OptionTile extends StatelessWidget {
-  const _OptionTile({required this.title, required this.subtitle, required this.selected, required this.onTap});
+  const _OptionTile({
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+    this.logos = const [],
+  });
   final String title;
   final String subtitle;
+  final List<String> logos;
   final bool selected;
   final VoidCallback onTap;
 
@@ -595,6 +622,18 @@ class _OptionTile extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                        if (logos.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6, bottom: 2),
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                for (final l in logos)
+                                  Image.asset('assets/pay/$l.png', height: 22, filterQuality: FilterQuality.medium),
+                              ],
+                            ),
+                          ),
                         if (subtitle.isNotEmpty)
                           Text(subtitle,
                               maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: C.muted)),
