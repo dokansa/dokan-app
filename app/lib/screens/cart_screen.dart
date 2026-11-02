@@ -12,6 +12,7 @@ import '../state/providers.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/permission_prompts.dart';
+import '../widgets/pay_logos.dart';
 import 'payment_screen.dart';
 import 'policies_screen.dart';
 
@@ -630,7 +631,7 @@ class _OptionTile extends StatelessWidget {
                               runSpacing: 4,
                               children: [
                                 for (final l in logos)
-                                  Image.asset('assets/pay/$l.png', height: 22, filterQuality: FilterQuality.medium),
+                                  Image.memory(payLogoBytes[l]!, height: 22, filterQuality: FilterQuality.medium),
                               ],
                             ),
                           ),
