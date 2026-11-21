@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -62,20 +63,56 @@ class LocationService {
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 15)),
     );
     var city = '', district = '', street = '', region = '', postcode = '';
+    // 1) OpenStreetMap (free, no key): usually better Saudi district and street names.
+    try {
+      final r = await Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 6),
+        receiveTimeout: const Duration(seconds: 6),
+        headers: {'User-Agent': 'DokanSA-App/1.0 (+https://dokansa.com)'},
+      )).get('https://nominatim.openstreetmap.org/reverse', queryParameters: {
+        'format': 'jsonv2',
+        'lat': pos.latitude,
+        'lon': pos.longitude,
+        'zoom': 18,
+        'addressdetails': 1,
+        'accept-language': 'ar',
+      });
+      final a = (r.data is Map ? r.data['address'] : null) as Map?;
+      if (a != null) {
+        String f(List<String> keys) {
+          for (final k in keys) {
+            final v = (a[k] ?? '').toString().trim();
+            if (v.isNotEmpty) return v;
+          }
+          return '';
+        }
+
+        city = f(['city', 'town', 'village', 'municipality', 'county']);
+        district = f(['suburb', 'neighbourhood', 'quarter', 'city_district', 'residential']);
+        street = f(['road', 'pedestrian', 'street']);
+        region = f(['state', 'region']);
+        postcode = f(['postcode']).replaceAll(RegExp(r'[^0-9]'), '');
+      }
+    } catch (_) {}
+    // 2) The phone's own (also free) geocoder fills whatever is still missing.
+    if (city.isEmpty || district.isEmpty) {
     try {
       // Arabic names on purpose: the store's shipping rules match Arabic city names (e.g. الرياض).
       await setLocaleIdentifier('ar_SA');
       final marks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
       if (marks.isNotEmpty) {
         final m = marks.first;
-        city = (m.locality ?? '').isNotEmpty ? m.locality! : (m.administrativeArea ?? '');
-        district = (m.subLocality ?? '').isNotEmpty ? m.subLocality! : (m.subAdministrativeArea ?? '');
-        street = m.thoroughfare ?? m.street ?? '';
-        region = m.administrativeArea ?? '';
-        postcode = (m.postalCode ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+        if (city.isEmpty) city = (m.locality ?? '').isNotEmpty ? m.locality! : (m.administrativeArea ?? '');
+        if (district.isEmpty) {
+          district = (m.subLocality ?? '').isNotEmpty ? m.subLocality! : (m.subAdministrativeArea ?? '');
+        }
+        if (street.isEmpty) street = m.thoroughfare ?? m.street ?? '';
+        if (region.isEmpty) region = m.administrativeArea ?? '';
+        if (postcode.isEmpty) postcode = (m.postalCode ?? '').replaceAll(RegExp(r'[^0-9]'), '');
       }
     } catch (_) {
       // Reverse geocoding is best effort; the pin itself is what matters.
+    }
     }
     return PickedLocation(
       lat: pos.latitude,

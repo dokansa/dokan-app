@@ -70,6 +70,10 @@ jobs:
       - name: Same plugin versions as the store release (patch only)
         if: env.MODE == 'patch' && env.PIN_DATE != ''
         run: |
+          # The store release was built with Kotlin 2.4.0 (newer Flutter templates bring a newer one).
+          SET=$(ls android/settings.gradle* | head -1)
+          perl -pi -e 's/(org\.jetbrains\.kotlin\.android"\)?\s*version\s*")[0-9.]+/${1}2.4.0/' "$SET"
+          grep -n "kotlin" "$SET" || true
           flutter pub deps --json > /tmp/deps.json
           python3 tool/pin_to_date.py /tmp/deps.json "$PIN_DATE"
           flutter pub get

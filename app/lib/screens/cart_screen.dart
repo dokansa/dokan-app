@@ -55,6 +55,9 @@ String _normCity(String s) => s
     .replaceAll(RegExp(r'\s+'), '')
     .toLowerCase();
 
+/// «العنوان الوطني: RHNA8007» at the start of address line 2.
+final _nationalRe = RegExp(r'(?:العنوان الوطني|National address)\s*[:：]?\s*([A-Za-z]{4}\s?[0-9]{4})');
+
 /// Match a free-text city (from GPS or old addresses) to our list; returns the Arabic value.
 String? _matchCity(String raw) {
   final n = _normCity(raw);
@@ -753,8 +756,8 @@ class _AddressSheet extends ConsumerStatefulWidget {
 class _AddressSheetState extends ConsumerState<_AddressSheet> {
   final _form = GlobalKey<FormState>();
   late final Map<String, TextEditingController> _c;
-  final _otherCity = TextEditingController();
-  String? _city; // Arabic city value, or '' for "other"
+  final _cityC = TextEditingController();
+  final _nationalC = TextEditingController();
   bool _saving = false;
   bool _locating = false;
   PickedLocation? _loc;
@@ -775,15 +778,19 @@ class _AddressSheetState extends ConsumerState<_AddressSheet> {
       'last_name': TextEditingController(text: pick('last_name', u?.lastName)),
       'phone': TextEditingController(text: (b['phone'] ?? '').toString().isNotEmpty ? b['phone'].toString() : (u?.phone ?? '')),
       'address_1': TextEditingController(text: pick('address_1')),
-      'address_2': TextEditingController(text: pick('address_2')),
+      'address_2': TextEditingController(),
     };
-    final savedCity = pick('city');
-    if (savedCity.isEmpty) {
-      _city = 'الرياض';
+    // The national short address is kept at the start of address line 2.
+    final a2 = pick('address_2');
+    final na = _nationalRe.firstMatch(a2);
+    if (na != null) {
+      _nationalC.text = na.group(1)!.toUpperCase();
+      _c['address_2']!.text = a2.replaceFirst(na.group(0)!, '').replaceFirst(RegExp(r'^\s*[—\-،,]\s*'), '').trim();
     } else {
-      _city = _matchCity(savedCity) ?? '';
-      if (_city == '') _otherCity.text = savedCity;
+      _c['address_2']!.text = a2;
     }
+    final savedCity = pick('city');
+    _cityC.text = savedCity.isEmpty ? 'الرياض' : savedCity;
     _loc = ref.read(pickedLocationProvider);
     // Pull the location automatically when the sheet opens.
     if (_loc == null) WidgetsBinding.instance.addPostFrameCallback((_) => _autoLocate());
@@ -807,7 +814,8 @@ class _AddressSheetState extends ConsumerState<_AddressSheet> {
     for (final c in _c.values) {
       c.dispose();
     }
-    _otherCity.dispose();
+    _cityC.dispose();
+    _nationalC.dispose();
     super.dispose();
   }
 
@@ -819,15 +827,7 @@ class _AddressSheetState extends ConsumerState<_AddressSheet> {
       if (!mounted) return;
       setState(() {
         _loc = loc;
-        final matched = keepTypedAddress ? null : _matchCity(loc.city);
-        if (keepTypedAddress) {
-          // Only the pin is added; the address the customer typed stays.
-        } else if (matched != null) {
-          _city = matched;
-        } else if (loc.city.isNotEmpty) {
-          _city = '';
-          _otherCity.text = loc.city;
-        }
+        if (!keepTypedAddress && loc.city.isNotEmpty) _cityC.text = _matchCity(loc.city) ?? loc.city;
         if (loc.line.isNotEmpty && !keepTypedAddress) _c['address_1']!.text = loc.line;
       });
       showMessage(context, context.tr('حددنا موقعك ✓ تأكد من رقم البيت', 'Location pinned ✓ — please add your house number'));
@@ -849,12 +849,17 @@ class _AddressSheetState extends ConsumerState<_AddressSheet> {
     if (!_form.currentState!.validate()) return;
     setState(() => _saving = true);
     final v = {for (final e in _c.entries) e.key: e.value.text.trim()};
-    final city = (_city == null || _city == '') ? _otherCity.text.trim() : _city!;
+    // Typed freely; known cities are sent with the Arabic name the shipping rules use.
+    final typedCity = _cityC.text.trim();
+    final city = _matchCity(typedCity) ?? typedCity;
+    final national = _nationalC.text.replaceAll(RegExp(r'\s'), '').toUpperCase();
+    final details = v['address_2'] ?? '';
+    final address2 = national.isEmpty ? details : 'العنوان الوطني: $national${details.isEmpty ? '' : ' — $details'}';
     final shipping = {
       'first_name': v['first_name'],
       'last_name': v['last_name'],
       'address_1': v['address_1'],
-      'address_2': v['address_2'],
+      'address_2': address2,
       'city': city,
       // The store's checkout requires a region and a postal code.
       'state': (_loc?.region ?? '').isNotEmpty
@@ -888,7 +893,6 @@ class _AddressSheetState extends ConsumerState<_AddressSheet> {
   @override
   Widget build(BuildContext context) {
     String? requiredField(String? v) => v == null || v.trim().isEmpty ? context.tr('مطلوب', 'Required') : null;
-    final ar = context.isAr;
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + MediaQuery.viewInsetsOf(context).bottom + MediaQuery.viewPaddingOf(context).bottom),
       child: Form(
@@ -944,30 +948,40 @@ class _AddressSheetState extends ConsumerState<_AddressSheet> {
                 decoration: InputDecoration(labelText: context.tr('رقم الجوال', 'Mobile number')),
               ),
               const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                value: _city,
-                isExpanded: true,
-                decoration: InputDecoration(labelText: context.tr('المدينة', 'City')),
-                validator: (v) => v == null ? context.tr('مطلوب', 'Required') : null,
-                items: [
-                  for (final (a, e) in _cities) DropdownMenuItem(value: a, child: Text(ar ? a : e)),
-                  DropdownMenuItem(value: '', child: Text(context.tr('مدينة ثانية…', 'Other city…'))),
-                ],
-                onChanged: (v) => setState(() => _city = v),
-              ),
-              if (_city == '') ...[
-                const SizedBox(height: 10),
-                TextFormField(
-                  controller: _otherCity,
-                  validator: requiredField,
-                  decoration: InputDecoration(labelText: context.tr('اسم المدينة', 'City name')),
+              TextFormField(
+                controller: _cityC,
+                validator: requiredField,
+                textInputAction: TextInputAction.next,
+                decoration: InputDecoration(
+                  labelText: context.tr('المدينة', 'City'),
+                  hintText: context.tr('مثلاً: الرياض', 'e.g. Riyadh'),
                 ),
-              ],
+              ),
               const SizedBox(height: 10),
               TextFormField(
                 controller: _c['address_1'],
                 validator: requiredField,
                 decoration: InputDecoration(labelText: context.tr('الحي والشارع', 'District and street')),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: _nationalC,
+                textCapitalization: TextCapitalization.characters,
+                textDirection: TextDirection.ltr,
+                maxLength: 9,
+                validator: (v) {
+                  final t = (v ?? '').replaceAll(RegExp(r'\s'), '');
+                  if (t.isEmpty) return null;
+                  return RegExp(r'^[A-Za-z]{4}[0-9]{4}$').hasMatch(t)
+                      ? null
+                      : context.tr('4 حروف إنجليزي و4 أرقام، مثل RHNA8007', '4 letters and 4 digits, like RHNA8007');
+                },
+                decoration: InputDecoration(
+                  labelText: context.tr('العنوان الوطني المختصر (اختياري)', 'National short address (optional)'),
+                  hintText: 'RHNA8007',
+                  counterText: '',
+                  helperText: context.tr('تلقاه في تطبيق سُبل أو توكلنا', 'Find it in the SPL or Tawakkalna app'),
+                ),
               ),
               const SizedBox(height: 10),
               TextFormField(
