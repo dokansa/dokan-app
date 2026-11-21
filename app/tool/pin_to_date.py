@@ -14,8 +14,12 @@ import urllib.request
 
 
 def key(v):
-    main, _, pre = v.partition('-')
-    main = main.split('+')[0]
+    main, _, build = v.partition('+')
+    main, _, pre = main.partition('-')
+    try:
+        b = int(build.split('.')[0]) if build else 0
+    except ValueError:
+        b = 0
     nums = []
     for p in main.split('.'):
         try:
@@ -24,7 +28,7 @@ def key(v):
             nums.append(0)
     while len(nums) < 3:
         nums.append(0)
-    return (nums, 0 if pre else 1, pre)
+    return (nums, 0 if pre else 1, pre, b)
 
 
 def main():
