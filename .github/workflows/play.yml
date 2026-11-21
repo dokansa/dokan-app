@@ -14,6 +14,9 @@ on:
       mode:
         description: "release = new AAB for Play; patch = over-the-air update to the release above"
         default: "release"
+      pin_date:
+        description: "patch only: plugin versions as of the store release build (UTC)"
+        default: "2026-10-31T21:30:00Z"
 permissions:
   contents: write
 jobs:
@@ -29,6 +32,7 @@ jobs:
       VNAME: ${{ github.event.inputs.version }}
       VCODE: ${{ github.event.inputs.build }}
       MODE: ${{ github.event.inputs.mode }}
+      PIN_DATE: ${{ github.event.inputs.pin_date }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -63,6 +67,12 @@ jobs:
           grep -q "checkReleaseBuilds" "$GRADLE" || perl -0pi -e 's/(\nandroid\s*\{)/$1\n    lint { checkReleaseBuilds = false; abortOnError = false }/' "$GRADLE"
           grep -nE "applicationId|targetSdk|minSdk|compileSdk" "$GRADLE"
       - run: flutter pub get
+      - name: Same plugin versions as the store release (patch only)
+        if: env.MODE == 'patch' && env.PIN_DATE != ''
+        run: |
+          flutter pub deps --json > /tmp/deps.json
+          python3 tool/pin_to_date.py /tmp/deps.json "$PIN_DATE"
+          flutter pub get
       - name: App icon
         continue-on-error: true
         run: dart run flutter_launcher_icons -f flutter_launcher_icons_android.yaml
