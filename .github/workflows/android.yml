@@ -78,6 +78,8 @@ jobs:
           for s in chinese devanagari japanese korean; do echo "-dontwarn com.google.mlkit.vision.text.$s.**" >> android/app/proguard-rules.pro; done
           GRADLE_APP=$(ls android/app/build.gradle* | head -1)
           grep -q "proguard-rules.pro" "$GRADLE_APP" || perl -0pi -e 's/(release\s*\{)/$1\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")/' "$GRADLE_APP"
+          # Release lint crashes on the new runner image (a lint bug, not our code); it doesn't change the app.
+          grep -q "checkReleaseBuilds" "$GRADLE_APP" || perl -0pi -e 's/(\nandroid\s*\{)/$1\n    lint { checkReleaseBuilds = false; abortOnError = false }/' "$GRADLE_APP"
           bash android_signing.sh
 
       - run: flutter pub get

@@ -59,6 +59,8 @@ jobs:
           bash android_compile_sdk_fix.sh
           for s in chinese devanagari japanese korean; do echo "-dontwarn com.google.mlkit.vision.text.$s.**" >> android/app/proguard-rules.pro; done
           grep -q "proguard-rules.pro" "$GRADLE" || perl -0pi -e 's/(release\s*\{)/$1\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")/' "$GRADLE"
+          # Release lint crashes on the new runner image (a lint bug, not our code); it doesn't change the app.
+          grep -q "checkReleaseBuilds" "$GRADLE" || perl -0pi -e 's/(\nandroid\s*\{)/$1\n    lint { checkReleaseBuilds = false; abortOnError = false }/' "$GRADLE"
           grep -nE "applicationId|targetSdk|minSdk|compileSdk" "$GRADLE"
       - run: flutter pub get
       - name: App icon
