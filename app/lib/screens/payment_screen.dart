@@ -190,14 +190,14 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> with WidgetsBindi
                 FilledButton.icon(
                   style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
                   onPressed: _checking ? null : () => _check(manual: true),
-                  icon: const Icon(Icons.verified_outlined),
+                  icon: const Icon(Icons.check_circle_rounded),
                   label: Text(context.tr('دفعت — تأكد من طلبي', "I've paid — check my order")),
                 ),
                 const SizedBox(height: 10),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
                   onPressed: _open,
-                  icon: const Icon(Icons.open_in_new_rounded),
+                  icon: const Icon(Icons.refresh_rounded),
                   label: Text(_opened
                       ? context.tr('افتح صفحة الدفع مرة ثانية', 'Open the payment page again')
                       : context.tr('افتح صفحة الدفع', 'Open the payment page')),

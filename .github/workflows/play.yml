@@ -85,7 +85,7 @@ jobs:
           DEFINES="--dart-define=STORE_URL=$STORE_URL --dart-define=FIREBASE_APP_ID=1:917838520906:android:520d4ce1cb0515ce33fcb3"
           perl -pi -e "s/^version: .*/version: $VNAME+$VCODE/" pubspec.yaml
           if [ "$MODE" = "patch" ]; then
-            shorebird patch android --release-version="$VNAME+$VCODE" -- $DEFINES 2>&1 | tee build.log
+            shorebird patch android --release-version="$VNAME+$VCODE" --allow-asset-diffs -- $DEFINES 2>&1 | tee build.log
             exit $?
           elif [ -n "$SHOREBIRD_TOKEN" ]; then
             shorebird release android --artifact=aab -- $DEFINES 2>&1 | tee build.log
